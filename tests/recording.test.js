@@ -1,8 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  chooseMimeType, chooseMicrophone, fileExtension, headerTracks, meterLevel, MIME_TYPES,
+  chooseMimeType, chooseMicrophone, fileExtension, headerTracks, meterLevel, recordingSize, coverRect, MIME_TYPES,
 } from '../js/recording.js';
+
+test('an upright camera picture is recorded whole, in portrait, at most 720 wide', () => {
+  assert.deepEqual(recordingSize(960, 1280), { width: 720, height: 960 });
+  assert.deepEqual(recordingSize(720, 1280), { width: 720, height: 1280 });
+  assert.deepEqual(recordingSize(480, 640), { width: 480, height: 640 });
+  assert.deepEqual(recordingSize(1080, 1080), { width: 720, height: 720 });
+});
+
+test('a wide camera picture is cut to a 9:16 portrait around its middle', () => {
+  assert.deepEqual(recordingSize(1280, 720), { width: 406, height: 720 });
+  assert.deepEqual(recordingSize(1920, 1440), { width: 720, height: 1280 });
+  assert.equal(recordingSize(0, 720), null);
+  assert.equal(recordingSize(undefined, undefined), null);
+});
+
+test('coverRect fills the canvas, centred, cutting what sticks out', () => {
+  assert.deepEqual(coverRect(720, 960, 720, 960), { x: 0, y: 0, width: 720, height: 960 });
+  // A wide picture on a portrait canvas: scaled to the height, sides cut equally.
+  assert.deepEqual(coverRect(1280, 720, 405, 720), { x: -437.5, y: 0, width: 1280, height: 720 });
+  // A smaller picture is scaled up.
+  assert.deepEqual(coverRect(360, 640, 720, 1280), { x: 0, y: 0, width: 720, height: 1280 });
+});
 
 test('MP4 with AAC is preferred, then WebM, and an empty string lets the browser decide', () => {
   assert.equal(chooseMimeType(() => true), 'video/mp4;codecs=avc1,mp4a.40.2');

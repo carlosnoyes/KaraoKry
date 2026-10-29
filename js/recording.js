@@ -18,6 +18,10 @@ const TIMESLICE_MS = 1000;
 // How many of a segment's first chunks are searched for its header.
 const HEADER_CHUNKS = 3;
 const LEVEL_CHECK_MS = 250;
+const MAX_RECORD_WIDTH = 720;
+const FRAME_MS = 1000 / 30;
+// How long the camera gets to show its first picture before it is recorded as it comes.
+const FRAMING_TIMEOUT_MS = 3000;
 // A working microphone always picks up some noise; this long of exact silence means it's dead.
 const DEAD_MIC_MS = 5000;
 
@@ -109,6 +113,28 @@ export function headerTracks(bytes) {
   return video || audio ? { video, audio } : null;
 }
 
+const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+
+/**
+ * The size of the recorded video for an upright camera picture of width x height:
+ * always portrait, at most 720 wide. An upright picture is kept whole; a wide one is
+ * cut to 9:16 around its middle.
+ */
+export function recordingSize(width, height) {
+  if (!(width > 0 && height > 0)) return null;
+  const sourceWidth = height >= width ? width : (height * 9) / 16;
+  const outWidth = Math.min(MAX_RECORD_WIDTH, sourceWidth);
+  return { width: even(outWidth), height: even((outWidth * height) / sourceWidth) };
+}
+
+/** Where to draw a picture so it covers the whole canvas, centred and cut at the edges. */
+export function coverRect(sourceWidth, sourceHeight, width, height) {
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const w = sourceWidth * scale;
+  const h = sourceHeight * scale;
+  return { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
+}
+
 /** A peak sample (0 to 1) as a meter reading from 0 (-50 dB or quieter) to 1 (-6 dB or louder). */
 export function meterLevel(peak) {
   if (!(peak > 0)) return 0;
@@ -139,6 +165,8 @@ export function fileExtension(mimeType) {
 // ---- Camera ---------------------------------------------------------------------------------
 
 let stream = null;
+// What the recorder records: the camera drawn upright in portrait, plus the microphone.
+let recordStream = null;
 let starting = null;
 let fallbackStreamFactory = null;
 let lastStartFailed = false;
@@ -151,10 +179,23 @@ export function onStreamChange(fn) {
   return () => streamListeners.delete(fn);
 }
 
-function setStream(next) {
+function setStream(next, recordable = next) {
   stream = next;
+  recordStream = recordable;
   connectMeter(stream);
   for (const fn of streamListeners) fn(stream);
+}
+
+// Bumped whenever the camera is closed, so a start still under way knows it was cancelled.
+let cameraGeneration = 0;
+
+function closeStream() {
+  cameraGeneration++;
+  stopFraming();
+  if (stream) {
+    for (const track of stream.getTracks()) track.stop();
+    setStream(null);
+  }
 }
 
 function streamLive() {
@@ -181,15 +222,85 @@ function openMicrophone(deviceId) {
   return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(deviceId) });
 }
 
-// Browsers match sizes against the camera's landscape modes and turn the picture
-// upright themselves, so a phone held upright gets a 720x1280 portrait video from
-// these landscape numbers. Portrait numbers here can make Chrome pick an oddly cropped mode.
+// The front camera's own full picture, with no cropping or scaling by the browser:
+// the widest view a web app can get. Sizes are in the camera's landscape terms, and
+// 4:3 is the whole sensor on most phones (16:9 modes are cut from it).
 const VIDEO_CONSTRAINTS = {
   facingMode: 'user',
   width: { ideal: 1280 },
-  height: { ideal: 720 },
-  frameRate: { ideal: 30, max: 30 },
+  height: { ideal: 960 },
+  resizeMode: 'none',
+  frameRate: { ideal: 30 },
 };
+
+// ---- Upright portrait framing -------------------------------------------------------------
+// Chrome on some Android phones records the front camera as a wide strip, or sideways,
+// even with the phone held upright. So the camera is drawn onto a portrait canvas the
+// way the screen shows it, and the canvas is what gets recorded.
+
+let framing = null;
+
+function stopFraming() {
+  if (!framing) return;
+  cancelAnimationFrame(framing.frame);
+  framing.source.srcObject = null;
+  framing.source.remove();
+  for (const track of framing.canvasStream?.getTracks() ?? []) track.stop();
+  framing = null;
+}
+
+function firstPicture(video) {
+  return new Promise((resolve) => {
+    const done = () => resolve(video.videoWidth > 0);
+    if (video.videoWidth) done();
+    video.addEventListener('loadedmetadata', done, { once: true });
+    video.addEventListener('resize', done, { once: true });
+    setTimeout(done, FRAMING_TIMEOUT_MS);
+  });
+}
+
+/** The stream to record: the camera upright on a portrait canvas, plus the microphone. */
+async function framePortrait(camera) {
+  stopFraming();
+  const source = document.createElement('video');
+  const current = { source, canvasStream: null, frame: 0 };
+  framing = current;
+  try {
+    source.muted = true;
+    source.playsInline = true;
+    source.setAttribute('aria-hidden', 'true');
+    // On the page but invisible, so Chrome keeps it playing.
+    source.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.append(source);
+    source.srcObject = new MediaStream(camera.getVideoTracks());
+    source.play().catch(() => {});
+    const size = (await firstPicture(source)) && recordingSize(source.videoWidth, source.videoHeight);
+    if (framing !== current) return camera;
+    const canvas = document.createElement('canvas');
+    const ctx = size && canvas.getContext('2d', { alpha: false });
+    if (!ctx || !canvas.captureStream) throw new Error('Canvas recording unavailable');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    current.canvasStream = canvas.captureStream(30);
+    let last = -Infinity;
+    const draw = (now) => {
+      if (framing !== current) return;
+      current.frame = requestAnimationFrame(draw);
+      if (now - last < FRAME_MS - 4 || source.readyState < 2 || !source.videoWidth) return;
+      last = now;
+      const r = coverRect(source.videoWidth, source.videoHeight, canvas.width, canvas.height);
+      ctx.drawImage(source, r.x, r.y, r.width, r.height);
+    };
+    draw(performance.now());
+    const track = camera.getVideoTracks()[0]?.getSettings();
+    setDebug('camera', `${track?.width ?? '?'}x${track?.height ?? '?'} from the camera, `
+      + `${source.videoWidth}x${source.videoHeight} upright, recorded at ${canvas.width}x${canvas.height}`);
+    return new MediaStream([...current.canvasStream.getVideoTracks(), ...camera.getAudioTracks()]);
+  } catch {
+    if (framing === current) stopFraming();
+    return camera;
+  }
+}
 
 /** Audio inputs. Their names are empty until camera and microphone permission was granted. */
 export async function listMicrophones() {
@@ -221,7 +332,7 @@ async function openStream() {
   }
   setDebug('microphone', media.getAudioTracks()[0]?.label || (media.getAudioTracks().length ? 'default' : 'none'));
   const video = media.getVideoTracks()[0]?.getSettings();
-  setDebug('camera', video?.width ? `${video.width}x${video.height}` : 'unknown size');
+  setDebug('camera', `${video?.width ?? '?'}x${video?.height ?? '?'} from the camera, recorded as it comes`);
   return media;
 }
 
@@ -233,20 +344,24 @@ export function startCamera() {
   if (!isRecordingEnabled()) return Promise.resolve(false);
   if (streamLive()) return Promise.resolve(true);
   if (starting) return starting;
+  const generation = cameraGeneration;
   starting = (async () => {
     try {
       if (!isRecordingSupported()) throw new Error('Recording not supported');
       const media = await openStream();
-      if (!isRecordingEnabled()) {
+      const recordable = await framePortrait(media);
+      if (!isRecordingEnabled() || generation !== cameraGeneration) {
+        if (recordable !== media) stopFraming();
         media.getTracks().forEach((t) => t.stop());
         return false;
       }
-      setStream(media);
+      setStream(media, recordable);
       lastStartFailed = false;
       return true;
     } catch (err) {
       if (fallbackStreamFactory) {
-        setStream(fallbackStreamFactory());
+        const media = fallbackStreamFactory();
+        setStream(media, await framePortrait(media));
         return true;
       }
       lastStartFailed = true;
@@ -267,19 +382,13 @@ export function cameraFailed() {
 export function stopCamera() {
   discardRound();
   wantRecording = false;
-  if (stream) {
-    for (const track of stream.getTracks()) track.stop();
-    setStream(null);
-  }
+  closeStream();
 }
 
 async function restartCamera() {
   const wasRecording = recorder?.state === 'recording';
   if (wasRecording) await stopSegment(true);
-  if (stream) {
-    for (const track of stream.getTracks()) track.stop();
-    setStream(null);
-  }
+  closeStream();
   if (await startCamera() && wasRecording) startSegment();
 }
 
@@ -442,7 +551,7 @@ function startSegment() {
   let next;
   const type = recorderMimeType();
   try {
-    next = new MediaRecorder(stream, {
+    next = new MediaRecorder(recordStream ?? stream, {
       ...(type ? { mimeType: type } : {}),
       videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
       audioBitsPerSecond: AUDIO_BITS_PER_SECOND,

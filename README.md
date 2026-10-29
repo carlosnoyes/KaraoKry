@@ -70,6 +70,8 @@ A friend with Premium can do step B themselves (same redirect URI), then paste t
 
 ### Filming notes
 
+- Videos are always upright portrait. KaraoKry draws the camera picture the way the screen shows it and records that, because Chrome on some Android phones otherwise records a wide strip or a sideways picture. It also asks for the front camera's full, uncropped picture (the widest view a web app can get), and the replay fills the screen, trimming a little off the sides. Phones' extra-wide selfie modes aren't available to web apps.
+
 - The replay plays wherever the phone's sound goes. With the Bluetooth headphones still connected, that's the headphones: put them back in their case or switch them off and Android moves the sound to the phone speaker. A web app can't pick the speaker itself.
 - KaraoKry records from the phone's own microphone. If the music in Bluetooth headphones still turns to phone-call quality while filming, open the phone's Bluetooth settings, tap the headphones and turn off **Calls**. **Settings → Recording** has a microphone picker, and a switch to turn filming off.
 - No cyan ring while singing means the microphone hears nothing: check Android's **Microphone access** switch in quick settings. KaraoKry warns about this, and first tries the phone's default microphone by itself.
