@@ -169,13 +169,15 @@ function testPatternStream() {
     const destination = audio.createMediaStreamDestination();
     const tone = audio.createOscillator();
     const gain = audio.createGain();
-    gain.gain.value = 0;
+    // A faint hum between the beeps, like the noise a real microphone always picks up.
+    const HUM = 0.004;
+    gain.gain.value = HUM;
     tone.frequency.value = 660;
     tone.connect(gain).connect(destination);
     tone.start();
     for (let s = 0; s < 600; s++) {
       gain.gain.setValueAtTime(0.08, audio.currentTime + s);
-      gain.gain.setValueAtTime(0, audio.currentTime + s + 0.12);
+      gain.gain.setValueAtTime(HUM, audio.currentTime + s + 0.12);
     }
     for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
   } catch {

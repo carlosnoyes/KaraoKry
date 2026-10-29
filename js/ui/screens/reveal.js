@@ -9,9 +9,12 @@ import { getGame, currentPair, actions, isLastRound } from '../../game.js';
 import { playback } from '../../playback/manager.js';
 import { getReplay, fileExtension } from '../../recording.js';
 import { toast } from '../toast.js';
+import { setDebug } from '../../debug.js';
 
 // If the recorder never hands over its video, fall back to the card after this long.
 const REPLAY_TIMEOUT_MS = 5000;
+// After this long playing, Debug info notes whether the replay had any sound to decode.
+const SOUND_CHECK_MS = 2500;
 
 function safeFileName(text) {
   return String(text).replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'song';
@@ -50,6 +53,12 @@ export default {
     });
     r.video.addEventListener('playing', () => {
       r.tapToPlay.hidden = true;
+      const token = this.token;
+      setTimeout(() => {
+        const decoded = r.video.webkitAudioDecodedByteCount;
+        if (token !== this.token || typeof decoded !== 'number') return;
+        setDebug('replaySound', decoded > 0 ? 'yes' : 'none (the video has no sound)');
+      }, SOUND_CHECK_MS);
     });
   },
 

@@ -19,7 +19,7 @@ import { vibrate, PATTERNS } from '../haptics.js';
 import { toast } from '../toast.js';
 import { menuSheet } from '../dialogs.js';
 import { confirmEndGame, premiumRequired, loginExpired, setSnapshotProvider, saveSnapshot } from '../../app.js';
-import { onStreamChange, onRecordingChange } from '../../recording.js';
+import { onStreamChange, onRecordingChange, onMicSilent, micPeak, meterLevel } from '../../recording.js';
 
 const SLOW_START_MS = 8000;
 const RESUME_CHECK_MS = 4000;
@@ -642,13 +642,25 @@ export default {
       else s.needsReload = true;
     });
 
-    // Selfie preview of the singer while they are filmed, with a blinking REC dot.
+    // Selfie preview of the singer while they are filmed, with a blinking REC dot and
+    // a ring that swells with their voice, so everyone can see the mic hears them.
     onStreamChange((stream) => {
       r.selfieVideo.srcObject = stream;
       r.selfie.hidden = !stream;
       if (stream) r.selfieVideo.play().catch(() => {});
     });
-    onRecordingChange((recording) => r.selfie.classList.toggle('is-recording', recording));
+    let meterFrame = 0;
+    const showLevel = () => {
+      r.selfie.style.setProperty('--level', meterLevel(micPeak()).toFixed(2));
+      meterFrame = requestAnimationFrame(showLevel);
+    };
+    onRecordingChange((recording) => {
+      r.selfie.classList.toggle('is-recording', recording);
+      cancelAnimationFrame(meterFrame);
+      if (recording) meterFrame = requestAnimationFrame(showLevel);
+      else r.selfie.style.setProperty('--level', '0');
+    });
+    onMicSilent(() => toast("The microphone hears nothing, so the replay will be silent. Check the phone's Microphone access switch in quick settings."));
 
     setSnapshotProvider(() => {
       const game = getGame();

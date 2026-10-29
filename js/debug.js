@@ -10,7 +10,11 @@ const info = {
   lastError: null,
   lastPrepare: null,
   microphone: null,
+  camera: null,
   recordingFormat: null,
+  recordingTracks: null,
+  micLevel: null,
+  replaySound: null,
 };
 
 export function setDebug(key, value) {
@@ -39,7 +43,11 @@ export function getDebugText(extra = {}) {
     'Last error': info.lastError ?? 'none',
     'Last preparation': info.lastPrepare ?? 'none',
     'Recording microphone': info.microphone ?? 'not started',
+    'Camera size': info.camera ?? 'not started',
     'Recording format': info.recordingFormat ?? 'not started',
+    'Recording contains': info.recordingTracks ?? 'not checked yet',
+    'Microphone level': info.micLevel ?? 'not measured yet',
+    'Replay sound': info.replaySound ?? 'no replay yet',
     ...extra,
     'User agent': globalThis.navigator?.userAgent ?? 'unknown',
   };
