@@ -1,5 +1,6 @@
-// Screen 6: Preparing. Reads the playlist, checks lyrics, shuffles and locks the
-// order. Shows only counts, never titles.
+// Screen 6: Preparing. Reads the playlist, shuffles and locks the order, and finds
+// lyrics for the first few songs (the rest are found during the game). Shows only
+// counts, never titles.
 
 import { go } from '../../router.js';
 import { refs, plural, showImage } from '../dom.js';
@@ -24,9 +25,12 @@ function errorMessage(err) {
   }
   if (err instanceof PrepareError && err.code === 'too_few') {
     const text = err.count === 0
-      ? "None of the songs in this playlist have lyrics we can find. Add more songs or pick another playlist."
-      : `Only ${plural(err.count, 'song')} in this playlist ${err.count === 1 ? 'has' : 'have'} lyrics we can find. Add more songs or pick another playlist.`;
+      ? "None of the songs in this playlist can be played. Add more songs or pick another playlist."
+      : `Only ${plural(err.count, 'song')} in this playlist can be played. Add more songs or pick another playlist.`;
     return { text, retry: false };
+  }
+  if (err instanceof PrepareError && err.code === 'no_lyrics') {
+    return { text: "None of the songs in this playlist have lyrics we can find. Add more songs or pick another playlist.", retry: false };
   }
   if (err instanceof PrepareError && err.code === 'lyrics_down') {
     return { text: "Couldn't reach the lyrics service. Check your connection and try again.", retry: true };
@@ -97,8 +101,9 @@ export default {
       signal: controller.signal,
       onProgress: ({ stage, checked, total }) => {
         if (controller.signal.aborted) return;
-        if (stage === 'reading') this.setProgress(0, total, 'Reading the playlist...');
-        else this.setProgress(checked, total, `Checked ${checked} of ${plural(total, 'song')}`);
+        if (stage === 'lyrics') this.setProgress(checked, total, 'Finding the first lyrics...');
+        else if (total > 50) this.setProgress(checked, total, `Reading the playlist... ${checked} of ${plural(total, 'song')}`);
+        else this.setProgress(checked, total, 'Reading the playlist...');
       },
     }).then((result) => {
       if (controller.signal.aborted) return;
@@ -125,10 +130,11 @@ export default {
       playlist: { id: this.playlist.id, name: this.playlist.name, imageUrl: this.playlist.imageUrl ?? null },
       songs: result.songs,
     });
-    setDebug('lastPrepare', `${result.songs.length} of ${result.total} kept; left out: ${JSON.stringify(result.reasons)}`);
+    setDebug('lastPrepare', `${result.songs.length} of ${result.total} kept; lyrics checked for ${result.checked} at the start, `
+      + `${result.withLyrics} found; left out: ${JSON.stringify(result.reasons)}`);
     this.r.readyCount.textContent = `${plural(result.songs.length, 'song')} ready`;
     this.r.leftOut.textContent = result.leftOut
-      ? `${plural(result.leftOut, 'song')} left out (no lyrics found, or not playable).`
+      ? `${plural(result.leftOut, 'song')} left out (podcasts, duplicates, songs under a minute, or not playable).`
       : '';
     this.r.leftOut.hidden = !result.leftOut;
     this.view('done');
@@ -142,7 +148,7 @@ export default {
       return;
     }
     recordError('prepare', err);
-    if (err instanceof PrepareError && err.reasons) setDebug('lastPrepare', `too few; left out: ${JSON.stringify(err.reasons)}`);
+    if (err instanceof PrepareError && err.reasons) setDebug('lastPrepare', `${err.code}; left out: ${JSON.stringify(err.reasons)}`);
     const { text, retry } = errorMessage(err);
     this.r.errorText.textContent = text;
     this.r.retry.hidden = !retry;

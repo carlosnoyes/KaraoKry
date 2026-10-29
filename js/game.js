@@ -5,7 +5,7 @@
 import { kvGet, kvSet, kvDelete } from './storage.js';
 
 export const GAME_KEY = 'game:current';
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 export const PHASES = ['pass', 'countdown', 'playing', 'paused', 'ended', 'reveal', 'over'];
 
 // Allowed phase changes (spec section 11.8). Skip and End game are also allowed
@@ -24,21 +24,91 @@ const TRANSITIONS = {
 let game = null;
 const listeners = new Set();
 
-/** Round i plays songs[i] and shows the lyrics of songs[(i - 1 + N) % N]. */
-export function lyricsIndexFor(round, count) {
-  return (round - 1 + count) % count;
+// ---- Songs and their lyrics ------------------------------------------------------------
+// A game holds every playable song of the playlist, in the shuffled order. Lyrics are
+// looked up a few songs ahead while the game goes on: each song gets `checked: true`
+// and `lyrics` (null when none were found). The last song always has lyrics, because
+// round 0 shows them.
+
+export function hasLyrics(song) {
+  return typeof song?.lyrics === 'string' && song.lyrics.length > 0;
 }
 
-export function pairFor(songs, round) {
-  return { played: songs[round], lyrics: songs[lyricsIndexFor(round, songs.length)] };
+/** Stores a lyrics lookup result on a song. */
+export function storeLyrics(song, found) {
+  const ok = Boolean(found?.found && found.lyrics);
+  song.checked = true;
+  song.lyrics = ok ? found.lyrics : null;
+  song.instrumentalStretches = ok ? (found.instrumentalStretches ?? []) : [];
+}
+
+/**
+ * The song whose lyrics round `round` shows. Round 0 shows the last song's. Every
+ * other round shows the song played just before; when that one has no lyrics, it
+ * borrows from a song already played (the one shown least often, then the one shown
+ * longest ago). Songs still to come are never used, except the last song when no
+ * played song has lyrics: round 0 showed its lyrics already. The song being played
+ * is never used.
+ * @param {object[]} songs the play order
+ * @param {(string|null)[]} sung the ids of the lyrics shown in earlier rounds
+ * @returns {object|null}
+ */
+export function chooseLyrics(songs, round, sung = []) {
+  const last = songs[songs.length - 1];
+  const played = songs[round];
+  if (round === 0) return hasLyrics(last) && last !== played ? last : null;
+  const previous = songs[round - 1];
+  if (hasLyrics(previous)) return previous;
+
+  const candidates = songs.slice(0, round).filter(hasLyrics);
+  if (!candidates.length) return hasLyrics(last) && last !== played ? last : null;
+  const earlier = sung.slice(0, round);
+  const timesShown = (song) => earlier.filter((id) => id === song.id).length;
+  const lastShown = (song) => earlier.lastIndexOf(song.id);
+  return candidates.reduce((best, song) => {
+    const diff = timesShown(song) - timesShown(best) || lastShown(song) - lastShown(best);
+    return diff < 0 ? song : best;
+  });
+}
+
+/**
+ * Stores a lyrics result for the song with this id. A song still to come that has no
+ * lyrics moves to the back, just before the last song, so the songs with lyrics play
+ * first and the round after each of them has fresh lyrics.
+ * @returns {boolean} whether the song was found
+ */
+export function placeLyrics(songs, round, id, found) {
+  const index = songs.findIndex((song) => song.id === id);
+  if (index < 0) return false;
+  const song = songs[index];
+  storeLyrics(song, found);
+  if (!hasLyrics(song) && index > round && index < songs.length - 2) {
+    songs.splice(index, 1);
+    songs.splice(songs.length - 1, 0, song);
+  }
+  return true;
+}
+
+/** Songs from the current round up to `ahead` songs later whose lyrics are not checked yet. */
+export function songsToCheck(g, ahead) {
+  if (!g) return [];
+  return g.songs.slice(g.round, g.round + ahead + 1).filter((song) => !song.checked);
 }
 
 export function getGame() {
   return game;
 }
 
+// Only when no song played so far has lyrics and the last song is the one playing.
+const NO_LYRICS = { name: '', artists: [], lyrics: 'No lyrics for this one.\n\nMake up your own words!' };
+
 export function currentPair() {
-  return game ? pairFor(game.songs, game.round) : null;
+  if (!game) return null;
+  const id = game.sung?.[game.round];
+  const lyrics = (id && game.songs.find((song) => song.id === id))
+    || chooseLyrics(game.songs, game.round, game.sung)
+    || NO_LYRICS;
+  return { played: game.songs[game.round], lyrics };
 }
 
 export function isLastRound() {
@@ -62,9 +132,9 @@ function randomId() {
 // ---- Persistence -------------------------------------------------------------------
 
 function serialize(g) {
-  const { schema, id, savedAt, userId, clientId, playlist, songs, round, phase, positionMs, wasPlaying,
+  const { schema, id, savedAt, userId, clientId, playlist, songs, sung, round, phase, positionMs, wasPlaying,
     lyricsScrollRatio, roundsPlayed, roundStarted } = g;
-  return { schema, id, savedAt, userId, clientId, playlist, songs, round, phase, positionMs, wasPlaying,
+  return { schema, id, savedAt, userId, clientId, playlist, songs, sung, round, phase, positionMs, wasPlaying,
     lyricsScrollRatio, roundsPlayed, roundStarted };
 }
 
@@ -75,12 +145,26 @@ export function save() {
   return kvSet(GAME_KEY, serialize(game)).catch(() => false);
 }
 
+/**
+ * Schema 1 games (before 1.2.0) had lyrics for every song and no `sung` list. Their
+ * pairing is what chooseLyrics gives for such a game, so they carry on unchanged.
+ */
+function upgrade(saved) {
+  if (saved.schema !== 1) return saved;
+  const songs = saved.songs.map((song) => ({ ...song, checked: true }));
+  const sung = [];
+  for (let round = 0; round <= saved.round; round++) sung.push(chooseLyrics(songs, round, sung)?.id ?? null);
+  return { ...saved, schema: SCHEMA, songs, sung };
+}
+
 export function isValidSavedGame(saved) {
   return Boolean(saved)
-    && saved.schema === SCHEMA
+    && (saved.schema === SCHEMA || saved.schema === 1)
     && Array.isArray(saved.songs)
     && saved.songs.length >= 3
-    && saved.songs.every((song) => song?.uri && typeof song.lyrics === 'string')
+    && saved.songs.every((song) => song?.uri && (song.lyrics == null || typeof song.lyrics === 'string'))
+    && (saved.schema === SCHEMA ? Array.isArray(saved.sung) : saved.songs.every(hasLyrics))
+    && hasLyrics(saved.songs[saved.songs.length - 1])
     && Number.isInteger(saved.round)
     && saved.round >= 0
     && saved.round < saved.songs.length
@@ -91,7 +175,7 @@ export function isValidSavedGame(saved) {
 export async function loadSavedGame() {
   try {
     const saved = await kvGet(GAME_KEY);
-    return isValidSavedGame(saved) ? saved : null;
+    return isValidSavedGame(saved) ? upgrade(saved) : null;
   } catch {
     return null;
   }
@@ -103,7 +187,10 @@ export function deleteSavedGame() {
 
 // ---- Lifecycle -------------------------------------------------------------------
 
-/** Starts a new game with a locked song order and saves it straight away. */
+/**
+ * Starts a new game and saves it straight away. `songs` is the shuffled order; its
+ * last song must have lyrics (see arrangeSongs in prepare.js).
+ */
 export function newGame({ userId, clientId, playlist, songs }) {
   game = {
     schema: SCHEMA,
@@ -113,6 +200,7 @@ export function newGame({ userId, clientId, playlist, songs }) {
     clientId,
     playlist,
     songs,
+    sung: [chooseLyrics(songs, 0)?.id ?? null],
     round: 0,
     phase: 'pass',
     positionMs: 0,
@@ -131,7 +219,7 @@ export function newGame({ userId, clientId, playlist, songs }) {
  * and a countdown comes back as the pass-the-phone screen.
  */
 export function resumeGame(saved) {
-  game = { id: randomId(), roundStarted: false, ...saved };
+  game = { id: randomId(), roundStarted: false, ...upgrade(saved) };
   if (game.phase === 'countdown') game.phase = 'pass';
   if (game.phase === 'playing') game.phase = 'paused';
   save();
@@ -161,8 +249,12 @@ function startedRounds() {
 function finishRound() {
   game.roundsPlayed = Math.max(game.roundsPlayed, game.round + 1);
   if (isLastRound()) return transition('over');
+  const round = game.round + 1;
+  const sung = (game.sung ?? []).slice(0, round);
+  sung[round] = chooseLyrics(game.songs, round, sung)?.id ?? null;
   return transition('pass', {
-    round: game.round + 1,
+    round,
+    sung,
     positionMs: 0,
     wasPlaying: false,
     lyricsScrollRatio: 0,
@@ -236,5 +328,12 @@ export const actions = {
   },
   setLyricsScroll(ratio) {
     if (game) game.lyricsScrollRatio = Math.min(1, Math.max(0, ratio));
+  },
+  /** A background lyrics lookup finished. Saved, but not announced: no screen needs it. */
+  lyricsChecked(id, found) {
+    if (!game || game.phase === 'over') return false;
+    const ok = placeLyrics(game.songs, game.round, id, found);
+    if (ok) save();
+    return ok;
   },
 };

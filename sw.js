@@ -3,7 +3,7 @@
 //
 // VERSION must match APP_VERSION in config.js. Bump both on every deploy.
 
-const VERSION = '1.1.2';
+const VERSION = '1.2.0';
 const CACHE = `karaokry-shell-${VERSION}`;
 
 const SHELL = [
@@ -20,6 +20,7 @@ const SHELL = [
   'js/auth.js',
   'js/debug.js',
   'js/game.js',
+  'js/lyrics-ahead.js',
   'js/lyrics.js',
   'js/main.js',
   'js/playlists.js',

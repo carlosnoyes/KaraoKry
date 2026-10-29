@@ -1,12 +1,13 @@
 // Development-only demo mode, offered on 127.0.0.1 / localhost.
-// Lets you play through every game screen without Spotify: five made-up songs
-// with original placeholder lyrics, and an engine that simulates playback
+// Lets you play through every game screen without Spotify: six made-up songs
+// with original placeholder lyrics (one has none, so its round after borrows
+// lyrics from an earlier song), and an engine that simulates playback
 // silently. On a computer without a camera, a test pattern with a beep stands in
 // for the singer's video. It is never loaded on the published site.
 
 import { Emitter } from '../playback/engine.js';
 import { newGame } from '../game.js';
-import { shuffle } from '../prepare.js';
+import { shuffle, arrangeSongs } from '../prepare.js';
 import { enterGame } from '../app.js';
 import { go } from '../router.js';
 import { setFallbackStream } from '../recording.js';
@@ -41,6 +42,8 @@ const SONGS = [
     instrumentalStretches: [] },
   { name: 'Pie in the Sky (Grandma\'s Version)', artists: ['The Bakers'], album: 'Recipes', durationMs: 85_000,
     instrumentalStretches: [{ start: 0, end: 20 }] },
+  { name: 'Saxophone Sunset', artists: ['Lounge Lizards'], album: 'No Words Needed', durationMs: 65_000,
+    instrumentalStretches: [] },
 ];
 
 export const DEMO_PLAYLIST = { id: 'demo', name: 'Demo playlist', imageUrl: null };
@@ -52,7 +55,8 @@ export function demoSongs() {
     imageUrl: null,
     imageUrlSmall: null,
     explicit: false,
-    lyrics: VERSES[i].join('\n'),
+    checked: true,
+    lyrics: VERSES[i]?.join('\n') ?? null,
     ...song,
   }));
 }
@@ -189,7 +193,7 @@ function testPatternStream() {
 /** Starts a demo game on the Pass the phone screen. Call from a tap. */
 export function startDemoGame() {
   setFallbackStream(testPatternStream);
-  newGame({ userId: 'demo', clientId: '', playlist: DEMO_PLAYLIST, songs: shuffle(demoSongs()) });
+  newGame({ userId: 'demo', clientId: '', playlist: DEMO_PLAYLIST, songs: arrangeSongs(shuffle(demoSongs())) });
   enterGame({ engineFactory: demoEngineFactory });
   go('pass');
 }

@@ -2,8 +2,11 @@
 // Parses both the 2026 field names (items / item) and the old ones (tracks / track).
 
 import { api, SpotifyError } from './spotify-api.js';
+import { foldText } from './lyrics.js';
 
 const MAX_PAGES = 200;
+const PAGE_CONCURRENCY = 4;
+const PINNED_WORD = 'karaokry';
 
 export class PlaylistUnreadableError extends Error {
   constructor() {
@@ -63,7 +66,13 @@ export async function listPlaylists(userId, { signal } = {}) {
     }
     next = data?.next ?? null;
   }
-  return out;
+  return sortPlaylists(out);
+}
+
+/** Playlists with "karaokry" in their name come first. Otherwise Spotify's order is kept. */
+export function sortPlaylists(playlists) {
+  const pinned = (playlist) => foldText(playlist.name).includes(PINNED_WORD);
+  return [...playlists.filter(pinned), ...playlists.filter((playlist) => !pinned(playlist))];
 }
 
 /**
@@ -83,23 +92,88 @@ export function extractEntries(page) {
   return null;
 }
 
-/** Reads every entry of a playlist. Throws PlaylistUnreadableError on 403 or an unexpected shape. */
+/**
+ * Paging links for the pages after the first one, made from the first page's `next`
+ * link by changing its offset. Null when the link has no offset to change.
+ */
+export function laterPageUrls(next, total) {
+  if (!next || !Number.isFinite(total)) return null;
+  let url;
+  try {
+    url = new URL(next, 'https://api.spotify.com/v1/');
+  } catch {
+    return null;
+  }
+  const offset = Number(url.searchParams.get('offset'));
+  const limit = Number(url.searchParams.get('limit'));
+  if (!(offset > 0) || !(limit > 0)) return null;
+  const urls = [];
+  for (let at = offset; at < total && urls.length < MAX_PAGES; at += limit) {
+    url.searchParams.set('offset', String(at));
+    urls.push(url.href);
+  }
+  return urls;
+}
+
+async function readPage(path, signal) {
+  let data;
+  try {
+    data = await api(path, { signal });
+  } catch (err) {
+    if (err instanceof SpotifyError && err.status === 403) throw new PlaylistUnreadableError();
+    throw err;
+  }
+  const parsed = extractEntries(data);
+  if (!parsed) throw new PlaylistUnreadableError();
+  return parsed;
+}
+
+/**
+ * Reads every entry of a playlist. After the first page, the other pages are read a
+ * few at a time, so a big playlist takes seconds rather than a long wait.
+ * Throws PlaylistUnreadableError on 403 or an unexpected shape.
+ */
 export async function readPlaylistItems(playlistId, { signal, onPage } = {}) {
-  const entries = [];
+  const first = await readPage(`/playlists/${encodeURIComponent(playlistId)}/items?limit=50&additional_types=track`, signal);
+  const total = first.total ?? first.entries.length;
+  let count = first.entries.length;
+  onPage?.(count, total);
+
+  const urls = laterPageUrls(first.next, first.total);
+  if (urls) {
+    const pages = new Array(urls.length);
+    const inner = new AbortController();
+    const onAbort = () => inner.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let nextPage = 0;
+    const worker = async () => {
+      while (nextPage < urls.length) {
+        const index = nextPage++;
+        const page = await readPage(urls[index], inner.signal);
+        pages[index] = page.entries;
+        count += page.entries.length;
+        onPage?.(count, total);
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, urls.length) }, worker));
+    } catch (err) {
+      inner.abort();
+      throw err;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
+    return [first.entries, ...pages].flat();
+  }
+
+  // No offset in the paging link: follow the links one by one.
+  const entries = [...first.entries];
   const seen = new Set();
-  let next = `/playlists/${encodeURIComponent(playlistId)}/items?limit=50&additional_types=track`;
-  for (let page = 0; next && page < MAX_PAGES; page++) {
+  let next = first.next;
+  for (let page = 1; next && page < MAX_PAGES; page++) {
     if (seen.has(next)) break;
     seen.add(next);
-    let data;
-    try {
-      data = await api(next, { signal });
-    } catch (err) {
-      if (err instanceof SpotifyError && err.status === 403) throw new PlaylistUnreadableError();
-      throw err;
-    }
-    const parsed = extractEntries(data);
-    if (!parsed) throw new PlaylistUnreadableError();
+    const parsed = await readPage(next, signal);
     entries.push(...parsed.entries);
     onPage?.(entries.length, parsed.total ?? entries.length);
     next = parsed.next;

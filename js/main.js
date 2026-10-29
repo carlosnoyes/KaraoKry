@@ -13,6 +13,7 @@ import { keepAwake } from './wake-lock.js';
 import { stopCamera } from './recording.js';
 import { initInstallPrompt, registerServiceWorker, showUpdateIfAllowed } from './pwa.js';
 import { recordError } from './debug.js';
+import { initLyricsAhead } from './lyrics-ahead.js';
 
 import { loading, loginDone, guestList, resume } from './ui/screens/simple.js';
 import welcome from './ui/screens/welcome.js';
@@ -34,6 +35,7 @@ for (const screen of [loading, welcome, loginDone, guestList, howTo, resume, pic
 }
 go('loading');
 initRecordingSync();
+initLyricsAhead();
 
 onScreenChange((id) => {
   syncWakeLock(id);

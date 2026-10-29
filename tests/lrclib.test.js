@@ -126,6 +126,29 @@ test('a 5xx is retried once and can then succeed', async () => {
   assert.equal(calls.length, 2);
 });
 
+test('when the exact match keeps failing with a server error, the search is tried', async () => {
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return String(url).includes('/api/get') ? respond(503) : respond(200, [record({})]);
+  };
+  assert.equal((await getLyrics({ ...track, id: 't-503' })).found, true);
+  assert.deepEqual(urls.map((u) => new URL(u).pathname), ['/api/get', '/api/get', '/api/search']);
+});
+
+test('"too many requests" is retried once, then reported as unavailable and not cached', async () => {
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return respond(429);
+  };
+  const busy = { ...track, id: 't-429' };
+  await assert.rejects(getLyrics(busy), (err) => err instanceof LyricsNetworkError && err.status === 429);
+  assert.deepEqual(urls.map((u) => new URL(u).pathname), ['/api/get', '/api/get'], 'no search while rate limited');
+  globalThis.fetch = async () => respond(200, record({}));
+  assert.equal((await getLyrics(busy)).found, true, 'the next lookup asks again');
+});
+
 test('aborting stops the lookup', async () => {
   const controller = new AbortController();
   globalThis.fetch = (url, init) => new Promise((resolve, reject) => {

@@ -24,6 +24,9 @@ test('kept tracks carry exactly the fields the game needs', () => {
     imageUrlSmall: 'https://img/c1-album-64',
     durationMs: 240_000,
     explicit: true,
+    checked: false,
+    lyrics: null,
+    instrumentalStretches: [],
   });
 });
 

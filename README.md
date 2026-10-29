@@ -62,11 +62,12 @@ A friend with Premium can do step B themselves (same redirect URI), then paste t
 
 ## Playing
 
-1. Log in with Spotify and pick one of **your own** playlists (Spotify does not let hobby apps read playlists you only follow; copy those songs into a playlist you made).
-2. KaraoKry drops podcasts, local files, duplicates, songs under a minute and songs without lyrics, then shuffles the rest once and locks the order. It only shows how many songs are ready.
-3. Each round, the singer puts on the headphones and taps **I'm ready**. While song *k* plays, the screen shows the lyrics of song *k − 1* (song 1 gets the lyrics of the last song), with the title of the song they're hearing at the top.
-4. The front camera films the singer and records their voice. The music is only in their headphones, so the recording is just their singing. A cyan ring around the selfie bubble swells with their voice, which shows the microphone hears them.
-5. Tap **Got It!** when someone guesses. The replay fills the screen straight away, with the right answer across the top, and loops until you tap **Next singer**. **Save video** puts it in the phone's Downloads; **Share** opens Android's share sheet (Google Photos, WhatsApp...). A skipped song's recording is thrown away.
+1. Log in with Spotify and pick one of **your own** playlists (Spotify does not let hobby apps read playlists you only follow; copy those songs into a playlist you made). Playlists with "karaokry" in their name are listed first.
+2. KaraoKry drops podcasts, local files, duplicates and songs under a minute, then shuffles the rest once and locks the order. It only shows how many songs are ready.
+3. It finds lyrics for the first few songs, which takes a second or two, and looks up the rest in the background during the game, always about 10 songs ahead. Songs with lyrics play first; songs without any wait at the back of the list.
+4. Each round, the singer puts on the headphones and taps **I'm ready**. While song *k* plays, the screen shows the lyrics of song *k − 1* (song 1 gets the lyrics of the last song), with the title of the song they're hearing at the top. If song *k − 1* has no lyrics, the round borrows them from a song already played, the one shown least often.
+5. The front camera films the singer and records their voice. The music is only in their headphones, so the recording is just their singing. A cyan ring around the selfie bubble swells with their voice, which shows the microphone hears them.
+6. Tap **Got It!** when someone guesses. The replay fills the screen straight away, with the right answer across the top, and loops until you tap **Next singer**. **Save video** puts it in the phone's Downloads; **Share** opens Android's share sheet (Google Photos, WhatsApp...). A skipped song's recording is thrown away.
 
 ### Filming notes
 
@@ -96,7 +97,7 @@ Then open <http://127.0.0.1:5500/>. (Spotify only accepts `127.0.0.1` for local 
 npm test
 ```
 
-Runs the automated tests (`node --test`): pairing, shuffling, track filters, title and lyrics cleaning, instrumental stretches, the LRCLIB client, the Spotify API wrapper, end-of-song detection, the game state machine, and a check that the service worker caches every app file.
+Runs the automated tests (`node --test`): pairing and borrowed lyrics, shuffling, track filters, playlist sorting and paging, the background lyrics lookups, title and lyrics cleaning, instrumental stretches, the LRCLIB client, the Spotify API wrapper, end-of-song detection, the game state machine, and a check that the service worker caches every app file.
 
 ```bash
 npm run icons
@@ -126,9 +127,10 @@ js/
   auth.js                PKCE login, tokens, refresh, logout
   spotify-api.js         every Spotify HTTP call (401 refresh, 429/5xx retries)
   playlists.js           list playlists, read playlist items
-  prepare.js             filters, lyrics lookup, shuffle and lock
+  prepare.js             filters, shuffle and lock, lyrics for the first songs
   lyrics.js              LRCLIB client, cleaning, LRC parsing, instrumental gaps
-  game.js                game state machine and saved game (no DOM)
+  lyrics-ahead.js        looks up lyrics a few songs ahead during the game
+  game.js                game state machine, lyrics pairing and saved game (no DOM)
   storage.js             localStorage and IndexedDB helpers
   wake-lock.js           keeps the screen awake during a game
   pwa.js                 service worker, install prompt, update toast

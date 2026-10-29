@@ -22,7 +22,7 @@ KaraoKry is a free, hobby party app for Carlos and his friends. A phone plays a 
 2. Songs play in that locked order. While song k plays, the screen shows the lyrics of song k−1.
 3. While song 1 plays, the screen shows the lyrics of the last song (song N). The pairing wraps around.
 4. Every song is therefore played once and sung once. The game stops at the end of the playlist.
-5. Any song with no lyrics available is removed from the game completely, before play starts. It is neither played nor sung.
+5. ~~Any song with no lyrics available is removed from the game completely, before play starts.~~ Changed on 29 October 2026 (v1.2.0), at Carlos's request: the lyrics sung matter less than a quick start, so a song with no lyrics is still played. It waits at the back of the order, and the round after it borrows lyrics from a song already played (section 8.7). Lyrics are looked up a few songs ahead during the game instead of all before it.
 6. The playlist order and upcoming songs are never shown. Nobody should be able to see what is coming.
 
 ### Carlos's answers to the design questionnaire
@@ -202,7 +202,8 @@ karaokry/
     auth.js                  PKCE login, token storage, refresh, logout
     spotify-api.js           fetch wrapper: bearer token, 401 refresh, 429 back-off, error mapping
     playlists.js             list playlists, read playlist items
-    prepare.js               filter tracks, fetch lyrics, shuffle, build the locked order
+    prepare.js               filter tracks, shuffle, lyrics for the first songs, build the locked order
+    lyrics-ahead.js          look up lyrics a few songs ahead during the game
     lyrics.js                LRCLIB client, cleaning, LRC parsing, instrumental gap detection
     playback/
       engine.js              the PlaybackEngine interface both engines implement
@@ -402,7 +403,7 @@ The router pushes a history entry for each screen and handles `popstate`, so the
 
 ## 8. Game preparation
 
-Preparing a game turns a playlist into a locked, shuffled list of at least 3 songs that all have lyrics. All of this happens before the first round, so nothing is looked up mid-game.
+Preparing a game turns a playlist into a locked, shuffled list of at least 3 playable songs, with lyrics found for the first few. The rest of the lyrics are looked up during the game, about 10 songs ahead of the current round (section 8.4), so even a 1,000-song playlist is ready in a few seconds.
 
 ### 8.1 Playlist picker data
 
@@ -410,7 +411,7 @@ Preparing a game turns a playlist into a locked, shuffled list of at least 3 son
 2. Call `GET /me/playlists?limit=50` and follow each response's `next` URL until it is null.
 3. For each playlist keep: `id`, `name`, the first image URL (images may be empty or null), `owner.id`, `collaborative`, and the song count from `items.total`, falling back to `tracks.total`.
 4. A playlist is usable when `owner.id` equals the user's id, or `collaborative` is true.
-5. Show usable playlists first, in Spotify's order. Hide playlists with a song count under 3, or show them disabled with "Too short".
+5. Show usable playlists first, in Spotify's order, except that playlists whose name contains "karaokry" (ignoring case and accents) come before all others. Hide playlists with a song count under 3, or show them disabled with "Too short".
 6. Show non-usable playlists in a collapsed section titled "Playlists you follow (can't be used)", greyed out.
 7. Tapping a non-usable playlist opens a sheet: "Spotify doesn't let hobby apps read playlists you don't own. To play this one, open it in Spotify and add its songs to a playlist you made (look for 'Add to other playlist' in the playlist's menu). It will then show up here."
 8. A permanent tip under the search box says: "Want a playlist you didn't make, like a Disney mix? Copy its songs into one of your own playlists in Spotify."
@@ -419,7 +420,7 @@ The search box filters the list as the user types. Match the typed text anywhere
 
 ### 8.2 Reading the playlist
 
-1. Call `GET /playlists/{id}/items?limit=50&additional_types=track` and follow `next` until it is null.
+1. Call `GET /playlists/{id}/items?limit=50&additional_types=track`. When the first page's `next` link has an `offset`, build the links for all later pages from it and read them 4 at a time, keeping their order. Otherwise follow `next` until it is null.
 2. For each entry, read the track as `entry.item ?? entry.track`, and the local-file flag as `entry.is_local`.
 3. If the call returns 403, or the response has no items field, show: "Spotify won't let KaraoKry read this playlist. Copy its songs into a playlist you own." Return to the picker.
 
@@ -436,23 +437,25 @@ Apply these filters in order. Record an internal reason code for each dropped tr
 | 5 | `duration_ms` is under 60,000 | `too_short` |
 | 6 | The same track id appeared earlier | `duplicate` |
 | 7 | The same cleaned title and first artist appeared earlier (another version of the same song) | `duplicate_version` |
-| 8 | No usable lyrics were found, or LRCLIB marks it instrumental (8.4) | `no_lyrics` |
+Missing lyrics are not a filter (since v1.2.0). A song without lyrics is still played.
 
-For each kept track store: `id`, `uri`, `name`, `artists` (array of names), `album` name, `imageUrl` (the largest album image up to 640 px), `imageUrlSmall` (the smallest), `durationMs` and `explicit`.
+For each kept track store: `id`, `uri`, `name`, `artists` (array of names), `album` name, `imageUrl` (the largest album image up to 640 px), `imageUrlSmall` (the smallest), `durationMs` and `explicit`, plus `checked` (false until its lyrics are looked up), `lyrics` (null when none were found) and `instrumentalStretches`.
 
 ### 8.4 Lyrics lookup
 
-Look up lyrics for every track that survived filters 1 to 7.
+Before the game starts, look up songs in the shuffled order, 4 at a time, until 4 have lyrics (or every song was checked); then stop the lookups still running. During the game, `lyrics-ahead.js` looks up every unchecked song from the current round to 10 songs after it, 2 at a time, whenever the round changes. A song still to come whose lookup finds no lyrics moves to the back, just before the last song. During the game, a network failure pauses the lookups for 30 seconds instead of stopping anything.
+
+Each lookup works like this:
 
 1. Check the cache first. IndexedDB key `lyrics:<spotify track id>`. Found lyrics stay valid for 30 days, "not found" results for 7 days.
 2. Try an exact match: `GET https://lrclib.net/api/get` with `track_name`, `artist_name` (the first artist), `album_name` and `duration` (track length in whole seconds).
 3. On 404, clean the title (rules below) and try `GET https://lrclib.net/api/search?track_name=<cleaned title>&artist_name=<first artist>`.
 4. From the search results, skip records with `instrumental: true` or with both lyric fields empty. Prefer a duration within 3 seconds of the Spotify track. Accept up to 10 seconds if the cleaned titles match exactly. Among equals, prefer records that have `syncedLyrics`.
-5. If nothing qualifies, the result is "not found". Cache it and drop the track.
+5. If nothing qualifies, the result is "not found". Cache it; the song is played without lyrics of its own.
 
-Every LRCLIB request sends `Lrclib-Client: KaraoKry v1 (<repo URL>)` and has a 10-second timeout. Retry once after 1 second on a network error or 5xx. Run at most 4 requests at a time. Use an `AbortController` so the Cancel button stops everything.
+Every LRCLIB request sends `Lrclib-Client: KaraoKry v1 (<repo URL>)` and has a 10-second timeout. Retry once after 1 second on a network error, a 5xx or a 429 ("too many requests"); after that it counts as a network failure, never as "not found", so it is not cached. When the exact match fails with a 5xx, still try the search. Use an `AbortController` so the Cancel button stops everything.
 
-If 5 requests in a row fail with network errors, stop and show "Couldn't reach the lyrics service. Check your connection and try again."
+Before the game, if 5 requests in a row fail with network errors, stop and show "Couldn't reach the lyrics service. Check your connection and try again." A song whose lookup fails twice stays unchecked, for the lookups during the game.
 
 Title cleaning rules, used for search and duplicate detection:
 
@@ -481,21 +484,23 @@ For each kept track that has `syncedLyrics`, work out where its long instrumenta
 
 ### 8.6 Minimum size
 
-At least 3 songs must remain. Otherwise show: "Only 2 songs in this playlist have lyrics we can find. Add more songs or pick another playlist." Use the real number, with a Back button.
+At least 3 playable songs must remain. Otherwise show: "Only 2 songs in this playlist can be played. Add more songs or pick another playlist." Use the real number, with a Back button. At least one song must have lyrics; if every song was checked and none has any, show "None of the songs in this playlist have lyrics we can find. Add more songs or pick another playlist."
 
 ### 8.7 Shuffle and lock
 
 1. Shuffle the kept tracks once with a Fisher-Yates shuffle driven by `crypto.getRandomValues`.
-2. That array is the locked order. It never changes during the game.
-3. Round `i` (0-based) plays `songs[i]` and shows the lyrics of `songs[(i - 1 + N) % N]`.
-4. Save the game immediately (section 12), before the first round.
+2. Arrange that shuffle: the songs found with lyrics first, then the songs not checked yet, then the songs found without lyrics, and last the first song with lyrics in the shuffle (its lyrics open the game).
+3. That array is the locked order. During the game only songs still to come move, and only to the back (8.4). Songs already played never move.
+4. Round 0 shows the lyrics of the last song. Round `i` shows the lyrics of `songs[i - 1]`. When that song has no lyrics, it borrows from a song already played: the one shown least often, then the one shown longest ago. Songs still to come are never shown, except the last song when no played song has lyrics yet. The song being played is never shown. When all songs have lyrics this is exactly the wrap-around rule: round `i` shows `songs[(i - 1 + N) % N]`.
+5. The lyrics chosen for each round are stored in `sung` when the round begins, so a resumed game shows the same ones.
+6. Save the game immediately (section 12), before the first round.
 
 ### 8.8 Preparing screen
 
-- While working: the playlist's cover and name, a progress bar with "Checked 38 of 112 songs", and a rotating line every 3 seconds from: "Tuning the off-key machine...", "Mixing up the lyrics...", "Hiding the answers...", "Warming up the mic...".
-- When done: "24 songs ready" in large text. Underneath, small: "6 songs left out (no lyrics found, or not playable)." Never list titles.
+- While working: the playlist's cover and name, a progress bar ("Reading the playlist... 350 of 1,000 songs", then "Finding the first lyrics..."), and a rotating line every 3 seconds from: "Tuning the off-key machine...", "Mixing up the lyrics...", "Hiding the answers...", "Warming up the mic...".
+- When done: "24 songs ready" in large text. Underneath, small: "6 songs left out (podcasts, duplicates, songs under a minute, or not playable)." Never list titles.
 - Buttons: "Start" (goes to Pass the phone for song 1) and "Back".
-- A 100-song playlist takes roughly 10 to 30 seconds the first time and is almost instant later, thanks to the cache.
+- Any playlist should take a few seconds: one Spotify page read first, the rest 4 at a time, then about 4 lyrics lookups (instant when cached). The lookups during the game start as soon as the game exists, on this screen.
 
 ## 9. Playback control
 
@@ -755,7 +760,7 @@ Wrap every storage read and write in `try/catch`. If storage fails, the app stil
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "savedAt": "2026-10-28T23:41:07Z",
   "userId": "spotify-user-id",
   "clientId": "client id used",
@@ -764,10 +769,12 @@ Wrap every storage read and write in `try/catch`. If storage fails, the app stil
     {
       "id": "...", "uri": "spotify:track:...", "name": "...", "artists": ["..."],
       "album": "...", "imageUrl": "...", "imageUrlSmall": "...", "durationMs": 215000,
-      "lyrics": "cleaned plain lyrics text",
+      "checked": true,
+      "lyrics": "cleaned plain lyrics text, or null",
       "instrumentalStretches": [{ "start": 0, "end": 18.4 }]
     }
   ],
+  "sung": ["id of the song whose lyrics round 0 showed", "...round 1", "..."],
   "round": 6,
   "phase": "playing",
   "positionMs": 73500,
@@ -777,7 +784,7 @@ Wrap every storage read and write in `try/catch`. If storage fails, the app stil
 }
 ```
 
-`songs` is the locked order. The lyrics for round `i` are read from `songs[(i - 1 + N) % N].lyrics`.
+`songs` is the locked order (section 8.7). The lyrics for round `i` are those of the song whose id is `sung[i]`. A schema 1 game (saved before v1.2.0, every song with lyrics) is upgraded on load: all songs are marked checked and `sung` is rebuilt with the same wrap-around pairing.
 
 Save the game:
 
@@ -903,7 +910,8 @@ Every failure keeps the game state safe and tells the user one plain thing to do
 | No Premium | SDK `account_error`, or 403 `PREMIUM_REQUIRED` | "Spotify Premium is needed to host a game on this phone." |
 | Playlist unreadable | 403 or no items field | Message from section 8.2. |
 | Fewer than 3 usable songs | After filtering | Message from section 8.6. |
-| Lyrics service down | 5 network failures in a row | Message from section 8.4. Cached lyrics still work next time. |
+| Lyrics service down mid-game | A lookup during the game fails | Lookups pause for 30 seconds; rounds borrow lyrics meanwhile. |
+| Lyrics service down | 5 network failures in a row before the game | Message from section 8.4. Cached lyrics still work next time. |
 | A song won't play mid-game | Play call fails with 403 or 404 for the track, or SDK `playback_error` on that track | Toast "This song won't play right now. Skipping it." Then behave as a skip (section 11.5). |
 | Spotify autoplays another song | Track changes after the end (section 9.5) | Pause at once. Show the end-of-song overlay. |
 | Someone takes over playback | Track or device changes before the end | Pause, then "Playback was interrupted. Tap play to continue." |
@@ -969,7 +977,10 @@ Build in two phases. Phase 1 is a rough but complete playable version for Carlos
 
 Write plain-JavaScript tests runnable with `node --test`, for the logic modules that do not touch the DOM:
 
-- Pairing: for N from 3 to 10, round 0 shows song N−1 and every other round shows song i−1.
+- Pairing: for N from 3 to 10, when every song has lyrics, round 0 shows song N−1 and every other round shows song i−1. With any mix of songs without lyrics, a round never shows the song being played or a song still to come (unless no played song has lyrics), and borrowing picks the song shown least often.
+- Preparation: a 1,000-song playlist makes only a handful of lyrics lookups before the game; the order puts songs with lyrics first and one with lyrics last.
+- Lookups during the game: only the next 10 songs are checked, songs without lyrics move to the back, network errors pause and resume, and the lookups stop when the game ends.
+- Playlists: names containing "karaokry" sort first; later pages are read in parallel and kept in order.
 - Shuffle: the output is a permutation of the input. Over 10,000 shuffles of 4 items, each position's frequency is within 5% of even.
 - Filters: run fixture playlist responses in both the new (`items` / `item`) and old (`tracks` / `track`) shapes.
 - Title cleaning: "Song - Remastered 2011", "Song (feat. X)", "Song - Live at Wembley" all clean to "song".

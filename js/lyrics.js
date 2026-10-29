@@ -18,11 +18,15 @@ export const MIN_LYRIC_LINES = 4;
 export const MIN_STRETCH_S = 15;
 export const MAX_VOCAL_LINE_S = 7;
 
-/** Thrown when LRCLIB cannot be reached (network error, timeout or 5xx after a retry). */
+/**
+ * Thrown when LRCLIB cannot be reached (network error, timeout, 5xx, or 429 "too many
+ * requests", after a retry). `status` is the HTTP status when there was one.
+ */
 export class LyricsNetworkError extends Error {
-  constructor(message = 'Lyrics service unreachable') {
+  constructor(message = 'Lyrics service unreachable', status = 0) {
     super(message);
     this.name = 'LyricsNetworkError';
+    this.status = status;
   }
 }
 
@@ -193,12 +197,13 @@ async function lrclibGet(path, params, signal) {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     }
-    if (res.status >= 500) {
+    // A busy or failing server is not an answer about the song: never cache it as "not found".
+    if (res.status >= 500 || res.status === 429) {
       if (attempt === 0) {
         await wait(1000, signal);
         continue;
       }
-      throw new LyricsNetworkError(`HTTP ${res.status}`);
+      throw new LyricsNetworkError(`HTTP ${res.status}`, res.status);
     }
     if (!res.ok) return null;
     try {
@@ -250,12 +255,20 @@ function notFound() {
 
 async function lookup(track, signal) {
   const artist = track.artists?.[0] ?? '';
-  const exact = await lrclibGet('/get', {
-    track_name: track.name,
-    artist_name: artist,
-    album_name: track.album ?? '',
-    duration: Math.round(track.durationMs / 1000),
-  }, signal);
+  let exact = null;
+  try {
+    exact = await lrclibGet('/get', {
+      track_name: track.name,
+      artist_name: artist,
+      album_name: track.album ?? '',
+      duration: Math.round(track.durationMs / 1000),
+    }, signal);
+  } catch (err) {
+    // LRCLIB sometimes fails on one song's exact match with a server error while its
+    // search works. Network failures, timeouts and "too many requests" still count as
+    // the service being unavailable.
+    if (!(err instanceof LyricsNetworkError) || !(err.status >= 500)) throw err;
+  }
   if (exact && typeof exact === 'object' && !Array.isArray(exact)) {
     if (exact.instrumental) return notFound();
     const entry = buildEntry(exact, track);
