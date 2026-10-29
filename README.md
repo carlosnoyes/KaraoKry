@@ -64,8 +64,15 @@ A friend with Premium can do step B themselves (same redirect URI), then paste t
 
 1. Log in with Spotify and pick one of **your own** playlists (Spotify does not let hobby apps read playlists you only follow; copy those songs into a playlist you made).
 2. KaraoKry drops podcasts, local files, duplicates, songs under a minute and songs without lyrics, then shuffles the rest once and locks the order. It only shows how many songs are ready.
-3. Each round, the singer puts on the headphones and taps **I'm ready**. While song *k* plays, the screen shows the lyrics of song *k − 1* (song 1 gets the lyrics of the last song).
-4. Tap **Got It!** when someone guesses, flip the card for the room, then pass the phone.
+3. Each round, the singer puts on the headphones and taps **I'm ready**. While song *k* plays, the screen shows the lyrics of song *k − 1* (song 1 gets the lyrics of the last song), with the title of the song they're hearing at the top.
+4. The front camera films the singer and records their voice. The music is only in their headphones, so the recording is just their singing.
+5. Tap **Got It!** when someone guesses. The replay starts straight away, with the right answer across the top, and loops until you tap **Next singer**. **Save video** puts it in the phone's Downloads; **Share** opens Android's share sheet (Google Photos, WhatsApp...). A skipped song's recording is thrown away.
+
+### Filming notes
+
+- The replay plays wherever the phone's sound goes. With the Bluetooth headphones still connected, that's the headphones: put them back in their case or switch them off and Android moves the sound to the phone speaker. A web app can't pick the speaker itself.
+- KaraoKry records from the phone's own microphone. If the music in Bluetooth headphones still turns to phone-call quality while filming, open the phone's Bluetooth settings, tap the headphones and turn off **Calls**. **Settings → Recording** has a microphone picker, and a switch to turn filming off.
+- Recordings stay on the phone and are deleted when the next round starts, unless you saved them. If the app was closed mid-round, that round has no replay and the answer card is shown instead.
 
 Playback happens inside KaraoKry with Spotify's Web Playback SDK. If a phone can't do that (some Android DRM settings block it), KaraoKry switches to remote-controlling the Spotify app instead. You can choose in **Settings → Playback**.
 

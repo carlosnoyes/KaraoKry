@@ -1,13 +1,15 @@
 // Development-only demo mode, offered on 127.0.0.1 / localhost.
 // Lets you play through every game screen without Spotify: five made-up songs
 // with original placeholder lyrics, and an engine that simulates playback
-// silently. It is never loaded on the published site.
+// silently. On a computer without a camera, a test pattern with a beep stands in
+// for the singer's video. It is never loaded on the published site.
 
 import { Emitter } from '../playback/engine.js';
 import { newGame } from '../game.js';
 import { shuffle } from '../prepare.js';
 import { enterGame } from '../app.js';
 import { go } from '../router.js';
+import { setFallbackStream } from '../recording.js';
 
 const VERSES = [
   ['Neon on the ceiling, glitter on the floor', 'Somebody is knocking on the karaoke door',
@@ -134,8 +136,57 @@ export class DemoEngine extends Emitter {
 
 const demoEngineFactory = () => new DemoEngine(demoSongs());
 
+/** A moving test pattern with a clock and a quiet beep every second. */
+function testPatternStream() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 360;
+  canvas.height = 640;
+  const ctx = canvas.getContext('2d');
+  const started = performance.now();
+  let stream = null;
+  const draw = () => {
+    if (stream && stream.getVideoTracks().every((track) => track.readyState === 'ended')) return;
+    const t = (performance.now() - started) / 1000;
+    const hue = (t * 40) % 360;
+    ctx.fillStyle = `hsl(${hue} 60% 18%)`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#FF2E97';
+    ctx.beginPath();
+    ctx.arc(180 + Math.sin(t * 2) * 120, 320 + Math.cos(t * 1.4) * 200, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#F5F0FF';
+    ctx.font = 'bold 40px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DEMO CAMERA', 180, 90);
+    ctx.fillText(`${t.toFixed(1)} s`, 180, 580);
+    requestAnimationFrame(draw);
+  };
+  draw();
+  stream = canvas.captureStream(30);
+
+  try {
+    const audio = new AudioContext();
+    const destination = audio.createMediaStreamDestination();
+    const tone = audio.createOscillator();
+    const gain = audio.createGain();
+    gain.gain.value = 0;
+    tone.frequency.value = 660;
+    tone.connect(gain).connect(destination);
+    tone.start();
+    for (let s = 0; s < 600; s++) {
+      gain.gain.setValueAtTime(0.08, audio.currentTime + s);
+      gain.gain.setValueAtTime(0, audio.currentTime + s + 0.12);
+    }
+    for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
+  } catch {
+    // video only
+  }
+  return stream;
+}
+
 /** Starts a demo game on the Pass the phone screen. Call from a tap. */
 export function startDemoGame() {
+  setFallbackStream(testPatternStream);
   newGame({ userId: 'demo', clientId: '', playlist: DEMO_PLAYLIST, songs: shuffle(demoSongs()) });
   enterGame({ engineFactory: demoEngineFactory });
   go('pass');

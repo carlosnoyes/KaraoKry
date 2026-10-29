@@ -191,8 +191,15 @@
         </button>
       </header>
       <div class="titles">
-        <p class="title-line title-line--sing"><span class="label label--sing">SING</span><span class="title-line__text" data-ref="sing"></span></p>
-        <p class="title-line title-line--tune"><span class="label label--tune">TUNE</span><span class="title-line__text" data-ref="tune"></span></p>
+        <p class="now-playing">
+          <span class="label label--playing">PLAYING</span>
+          <span class="now-playing__title" data-ref="title"></span>
+          <span class="now-playing__artist" data-ref="artist"></span>
+        </p>
+        <div class="selfie" data-ref="selfie" hidden>
+          <video class="selfie__video" data-ref="selfieVideo" muted playsinline autoplay aria-hidden="true"></video>
+          <span class="selfie__rec" data-ref="rec" aria-label="Recording"></span>
+        </div>
       </div>
       <div class="lyrics-wrap">
         <div class="lyrics" data-ref="lyrics" tabindex="0" aria-label="Lyrics to sing" data-autofocus></div>
@@ -249,34 +256,74 @@
       </div>
     </section>
 
-    <!-- 10. Reveal -->
+    <!-- 10. Reveal: the replay of the singer, or a covered card when the round was not filmed -->
     <section id="screen-reveal" class="screen screen--center" hidden>
-      <div class="reveal-card" data-ref="card">
-        <div class="reveal-card__inner">
-          <div class="reveal-card__face reveal-card__front">
-            <button type="button" class="reveal-card__tap" data-ref="tap" data-autofocus>
-              <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6a10 10 0 0 1 10 10v14a10 10 0 0 1-20 0V16A10 10 0 0 1 32 6z" fill="none" stroke="currentColor" stroke-width="4"/><path d="M16 28a16 16 0 0 0 32 0M32 44v10M22 56h20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
-              <span>Hold the phone up and tap to reveal</span>
-            </button>
-          </div>
-          <div class="reveal-card__face reveal-card__back" data-ref="back" aria-hidden="true">
-            <p class="it-was">It was...</p>
-            <div class="art">
-              <img data-ref="art" alt="" hidden>
-              <div class="art__placeholder" data-ref="artPlaceholder">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-              </div>
+      <div class="replay" data-ref="replay" hidden>
+        <video class="replay__video" data-ref="video" playsinline preload="auto"></video>
+        <div class="replay__loading" data-ref="loading">
+          <span class="spinner spinner--lg" aria-hidden="true"></span>
+          <p>Getting the replay ready...</p>
+        </div>
+        <button type="button" class="replay__tap" data-ref="tapToPlay" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>
+          <span>Tap to play the replay</span>
+        </button>
+        <div class="replay__answer" aria-live="polite">
+          <div class="replay__art">
+            <img data-ref="replayArt" alt="" hidden>
+            <div class="art__placeholder" data-ref="replayArtPlaceholder">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
             </div>
-            <h2 class="reveal-title" data-ref="title"></h2>
-            <p class="reveal-artist" data-ref="artist"></p>
-            <hr class="divider">
-            <p class="small muted" data-ref="singing"></p>
+          </div>
+          <div class="replay__text">
+            <p class="it-was">It was...</p>
+            <h2 class="replay__title" data-ref="replayTitle"></h2>
+            <p class="replay__artist" data-ref="replayArtist"></p>
           </div>
         </div>
+        <div class="replay__bottom">
+          <p class="replay__hint">Headphones still connected? Put them away and the phone speaker takes over.</p>
+          <div class="replay__row">
+            <button type="button" class="btn btn--secondary btn--small" data-ref="save">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Save video
+            </button>
+            <button type="button" class="btn btn--secondary btn--small" data-ref="share" hidden>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="18" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="19" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" stroke="currentColor" stroke-width="2"/></svg>
+              Share
+            </button>
+          </div>
+          <button type="button" class="btn btn--primary" data-ref="replayNext">Next singer</button>
+          <button type="button" class="btn btn--plain btn--small" data-ref="replayBack">Go back</button>
+        </div>
       </div>
-      <div class="stack">
-        <button type="button" class="btn btn--primary" data-ref="next">Next singer</button>
-        <button type="button" class="btn btn--secondary" data-ref="goBack">Go back</button>
+
+      <div class="reveal-classic" data-ref="classic">
+        <div class="reveal-card" data-ref="card">
+          <div class="reveal-card__inner">
+            <div class="reveal-card__face reveal-card__front">
+              <button type="button" class="reveal-card__tap" data-ref="tap">
+                <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6a10 10 0 0 1 10 10v14a10 10 0 0 1-20 0V16A10 10 0 0 1 32 6z" fill="none" stroke="currentColor" stroke-width="4"/><path d="M16 28a16 16 0 0 0 32 0M32 44v10M22 56h20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+                <span>Hold the phone up and tap to reveal</span>
+              </button>
+            </div>
+            <div class="reveal-card__face reveal-card__back" data-ref="back" aria-hidden="true">
+              <p class="it-was">It was...</p>
+              <div class="art">
+                <img data-ref="art" alt="" hidden>
+                <div class="art__placeholder" data-ref="artPlaceholder">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                </div>
+              </div>
+              <h2 class="reveal-title" data-ref="title"></h2>
+              <p class="reveal-artist" data-ref="artist"></p>
+            </div>
+          </div>
+        </div>
+        <div class="stack">
+          <button type="button" class="btn btn--primary" data-ref="next">Next singer</button>
+          <button type="button" class="btn btn--secondary" data-ref="goBack">Go back</button>
+        </div>
       </div>
     </section>
 
@@ -331,6 +378,23 @@
               <span><strong>Use the Spotify app</strong><small>Needs the Spotify app on this phone, logged in to the same account.</small></span>
             </label>
           </div>
+        </section>
+
+        <section class="group">
+          <h2 class="group__title">Recording</h2>
+          <label class="switch-row">
+            <span>Film the singer <small class="muted">Replays their singing after Got It!</small></span>
+            <input type="checkbox" role="switch" class="switch" data-ref="record">
+          </label>
+          <div class="field field--plain" data-ref="micField">
+            <label for="mic-choice"><strong>Microphone</strong></label>
+            <select id="mic-choice" class="input" data-ref="mic">
+              <option value="auto">Phone microphone (recommended)</option>
+              <option value="default">Let Android choose</option>
+            </select>
+            <p class="small muted">If the music in Bluetooth headphones starts to sound like a phone call while filming, open the phone's Bluetooth settings, tap the headphones and turn off “Calls”.</p>
+          </div>
+          <p class="small muted" data-ref="recordUnsupported" hidden>Filming isn't available in this browser.</p>
         </section>
 
         <section class="group">

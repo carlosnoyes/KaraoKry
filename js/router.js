@@ -16,7 +16,8 @@ let wantTop = false;
 
 /**
  * @param {{id: string, root?: boolean, init?: (el: HTMLElement) => void,
- *          show?: (params: object, fromId: string|null) => void, hide?: () => void, back?: () => void}} screen
+ *          show?: (params: object, fromId: string|null) => void, hide?: () => void, back?: () => void,
+ *          focus?: () => void}} screen  focus() replaces the default focus on [data-autofocus] or the heading
  */
 export function registerScreen(screen) {
   const el = document.getElementById(`screen-${screen.id}`);
@@ -48,7 +49,10 @@ export function go(id, params = {}) {
   next.el.hidden = false;
   next.show?.(params, previous?.id ?? null);
   syncHistory(next);
-  if (previous !== next) moveFocus(next.el);
+  if (previous !== next) {
+    if (next.focus) next.focus();
+    else moveFocus(next.el);
+  }
   for (const fn of listeners) fn(id, previous?.id ?? null);
 }
 

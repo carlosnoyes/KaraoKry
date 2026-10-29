@@ -19,6 +19,7 @@ import { vibrate, PATTERNS } from '../haptics.js';
 import { toast } from '../toast.js';
 import { menuSheet } from '../dialogs.js';
 import { confirmEndGame, premiumRequired, loginExpired, setSnapshotProvider, saveSnapshot } from '../../app.js';
+import { onStreamChange, onRecordingChange } from '../../recording.js';
 
 const SLOW_START_MS = 8000;
 const RESUME_CHECK_MS = 4000;
@@ -54,7 +55,6 @@ let r;
 let lyricsView;
 let scrub;
 
-const titleLine = (song) => (song.artists?.length ? `${song.name} – ${song.artists.join(', ')}` : song.name);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 function inRound() {
@@ -76,8 +76,8 @@ function currentPosition() {
 function loadRound(game) {
   const { played, lyrics } = currentPair();
   r.progress.textContent = songProgress(game.round, game.songs.length);
-  r.sing.textContent = titleLine(lyrics);
-  r.tune.textContent = titleLine(played);
+  r.title.textContent = played.name;
+  r.artist.textContent = played.artists.join(', ');
   lyricsView.applySavedSize();
   lyricsView.setText(lyrics.lyrics);
 
@@ -641,6 +641,14 @@ export default {
       if (getGame()?.phase === 'playing') startPlayback(currentPosition());
       else s.needsReload = true;
     });
+
+    // Selfie preview of the singer while they are filmed, with a blinking REC dot.
+    onStreamChange((stream) => {
+      r.selfieVideo.srcObject = stream;
+      r.selfie.hidden = !stream;
+      if (stream) r.selfieVideo.play().catch(() => {});
+    });
+    onRecordingChange((recording) => r.selfie.classList.toggle('is-recording', recording));
 
     setSnapshotProvider(() => {
       const game = getGame();

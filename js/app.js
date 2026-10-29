@@ -6,10 +6,17 @@ import { getMe, listPlaylists } from './playlists.js';
 import { getAuth, setUser, logout as clearLogin, AuthRequiredError } from './auth.js';
 import { SpotifyError } from './spotify-api.js';
 import { lsGet } from './storage.js';
-import { actions, getGame, clearGame, deleteSavedGame, loadSavedGame, resumeGame, save } from './game.js';
+import {
+  actions, getGame, clearGame, deleteSavedGame, loadSavedGame, resumeGame, save, onGameChange,
+} from './game.js';
 import { playback } from './playback/manager.js';
 import { keepAwake } from './wake-lock.js';
+import {
+  startCamera, stopCamera, cameraFailed, isRecordingEnabled, isRecordingSupported,
+  beginRound, recordPlaying, recordPaused, finishRound, discardRound,
+} from './recording.js';
 import { confirmDialog, infoDialog } from './ui/dialogs.js';
+import { toast } from './ui/toast.js';
 
 export const MESSAGES = {
   expired: 'Your Spotify login has expired. Please log in again.',
@@ -97,6 +104,48 @@ export function enterGame({ engineFactory = null } = {}) {
   playback.useDemo(engineFactory);
   playback.prepare({ newGame: true });
   keepAwake(true);
+  startFilming();
+}
+
+/** Starts the selfie camera (inside a tap, so the browser can ask for permission). */
+export function startFilming() {
+  if (!isRecordingEnabled() || !isRecordingSupported()) return;
+  startCamera().then((ok) => {
+    if (!ok && cameraFailed()) {
+      toast("Camera or microphone blocked, so singers won't be filmed. Allow them in Chrome's site settings.", { ms: 5000 });
+    }
+  });
+}
+
+/**
+ * Keeps the recording in step with the game: record while the song plays, pause
+ * with it, finish on Got It! or Reveal (for the replay), start over on a new round.
+ */
+export function initRecordingSync() {
+  onGameChange((game) => {
+    if (!game) {
+      stopCamera();
+      return;
+    }
+    beginRound(`${game.id}:${game.round}`);
+    switch (game.phase) {
+      case 'playing':
+        recordPlaying();
+        break;
+      case 'paused':
+      case 'ended':
+        recordPaused();
+        break;
+      case 'reveal':
+        finishRound();
+        break;
+      case 'over':
+        stopCamera();
+        break;
+      default:
+        discardRound();
+    }
+  });
 }
 
 /** "Resume" on the resume prompt. Must run inside the tap. */
@@ -128,6 +177,7 @@ export async function confirmEndGame() {
 export function leaveGame() {
   playback.pause().catch(() => {});
   keepAwake(false);
+  stopCamera();
   go('picker');
 }
 
@@ -145,12 +195,14 @@ export function loginExpired() {
   saveSnapshot();
   playback.reset();
   keepAwake(false);
+  stopCamera();
   if (currentScreenId() !== 'welcome') go('welcome', { message: MESSAGES.expired });
 }
 
 export async function logout() {
   playback.reset();
   keepAwake(false);
+  stopCamera();
   clearLogin();
   await deleteSavedGame();
   clearGame();

@@ -6,10 +6,11 @@ import {
   getValidToken, refreshAccessToken, completeLoginFromUrl, isLoggedIn, initAuthSync, onAuthEvent,
 } from './auth.js';
 import {
-  MESSAGES, afterLogin, loginExpired, showOffline, saveSnapshot, syncWakeLock,
+  MESSAGES, afterLogin, loginExpired, showOffline, saveSnapshot, syncWakeLock, initRecordingSync,
 } from './app.js';
 import { playback } from './playback/manager.js';
 import { keepAwake } from './wake-lock.js';
+import { stopCamera } from './recording.js';
 import { initInstallPrompt, registerServiceWorker, showUpdateIfAllowed } from './pwa.js';
 import { recordError } from './debug.js';
 
@@ -32,6 +33,7 @@ for (const screen of [loading, welcome, loginDone, guestList, howTo, resume, pic
   registerScreen(screen);
 }
 go('loading');
+initRecordingSync();
 
 onScreenChange((id) => {
   syncWakeLock(id);
@@ -50,6 +52,7 @@ onAuthEvent((type) => {
   } else if (type === 'remote-logout' && currentScreenId() !== 'welcome') {
     playback.reset();
     keepAwake(false);
+    stopCamera();
     go('welcome');
   }
 });
@@ -82,6 +85,7 @@ channel?.addEventListener('message', (event) => {
   saveSnapshot();
   playback.reset();
   keepAwake(false);
+  stopCamera();
   const overlay = document.getElementById('overlay-other-window');
   overlay.hidden = false;
   overlay.querySelector('[data-action="here"]').onclick = () => location.reload();

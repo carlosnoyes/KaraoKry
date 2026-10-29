@@ -9,6 +9,8 @@ const info = {
   deviceId: null,
   lastError: null,
   lastPrepare: null,
+  microphone: null,
+  recordingFormat: null,
 };
 
 export function setDebug(key, value) {
@@ -36,6 +38,8 @@ export function getDebugText(extra = {}) {
     'Device id': info.deviceId ?? 'none',
     'Last error': info.lastError ?? 'none',
     'Last preparation': info.lastPrepare ?? 'none',
+    'Recording microphone': info.microphone ?? 'not started',
+    'Recording format': info.recordingFormat ?? 'not started',
     ...extra,
     'User agent': globalThis.navigator?.userAgent ?? 'unknown',
   };

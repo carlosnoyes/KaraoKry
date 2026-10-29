@@ -3,7 +3,7 @@
 //
 // VERSION must match APP_VERSION in config.js. Bump both on every deploy.
 
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 const CACHE = `karaokry-shell-${VERSION}`;
 
 const SHELL = [
@@ -25,6 +25,7 @@ const SHELL = [
   'js/playlists.js',
   'js/prepare.js',
   'js/pwa.js',
+  'js/recording.js',
   'js/router.js',
   'js/spotify-api.js',
   'js/storage.js',

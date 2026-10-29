@@ -7,8 +7,12 @@ import {
   getAuth, isLoggedIn, getRedirectUri, getCustomClientId, isValidClientId, setCustomClientId,
   clearCustomClientId, getClientId, startLogin,
 } from '../../auth.js';
-import { logout } from '../../app.js';
+import { logout, startFilming } from '../../app.js';
+import { getGame } from '../../game.js';
 import { playback } from '../../playback/manager.js';
+import {
+  isRecordingSupported, isRecordingEnabled, setRecordingEnabled, getMicChoice, setMicChoice, listMicrophones,
+} from '../../recording.js';
 import { getSavedLyricsSize, resetLyricsSize } from '../lyrics-view.js';
 import { canVibrate, isVibrationOn, setVibrationOn, vibrate, PATTERNS } from '../haptics.js';
 import { countCachedLyrics, clearLyricsCache } from '../../lyrics.js';
@@ -42,6 +46,14 @@ export default {
       setVibrationOn(r.vibration.checked);
       if (r.vibration.checked) vibrate(PATTERNS.tick);
     });
+    r.record.addEventListener('change', () => {
+      setRecordingEnabled(r.record.checked);
+      const game = getGame();
+      // Switching it on mid-game: start the camera now, inside this tap.
+      if (r.record.checked && game && game.phase !== 'over') startFilming();
+      this.refreshRecording();
+    });
+    r.mic.addEventListener('change', () => setMicChoice(r.mic.value));
     r.howto.addEventListener('click', () => go('how-to'));
     r.saveClientId.addEventListener('click', () => this.saveClientId());
     r.resetClientId.addEventListener('click', () => this.resetClientId());
@@ -83,10 +95,36 @@ export default {
     r.vibration.disabled = !vibrationSupported;
     r.vibrationNote.textContent = vibrationSupported ? 'Android only' : 'Not available on this device';
 
+    this.refreshRecording();
+
     r.version.textContent = `v${APP_VERSION}`;
     r.repo.href = REPO_URL;
     r.readme.href = README_URL;
     if (r.advanced.open) this.refreshAdvanced();
+  },
+
+  async refreshRecording() {
+    const r = this.r;
+    const supported = isRecordingSupported();
+    r.record.checked = supported && isRecordingEnabled();
+    r.record.disabled = !supported;
+    r.recordUnsupported.hidden = supported;
+    r.micField.hidden = !r.record.checked;
+    if (!r.record.checked) return;
+
+    // Microphone names are only visible after the camera permission was granted.
+    const mics = (await listMicrophones()).filter((m) => m.deviceId && m.label
+      && m.deviceId !== 'default' && m.deviceId !== 'communications');
+    const choice = getMicChoice();
+    const fixed = [...r.mic.querySelectorAll('option')].slice(0, 2);
+    const options = mics.map((m) => {
+      const option = document.createElement('option');
+      option.value = m.deviceId;
+      option.textContent = m.label;
+      return option;
+    });
+    r.mic.replaceChildren(...fixed, ...options);
+    r.mic.value = [...r.mic.options].some((o) => o.value === choice) ? choice : 'auto';
   },
 
   refreshAdvanced() {
