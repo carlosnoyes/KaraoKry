@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>KaraoKry</title>
+  <defs>
+    <radialGradient id="spot" cx="38%" cy="34%" r="70%">
+      <stop offset="0" stop-color="#9B5CFF" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#9B5CFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="9" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect id="bg" width="512" height="512" rx="112" fill="#0A0612"/>
+  <rect id="spotlight" width="512" height="512" rx="112" fill="url(#spot)"/>
+  <g id="art">
+    <g filter="url(#glow)" fill="none" stroke="#FF2E97" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="176" y="84" width="120" height="196" rx="60"/>
+      <path d="M136 226v18a100 100 0 0 0 200 0v-18"/>
+      <path d="M236 344v58M180 420h112"/>
+    </g>
+    <g fill="none" stroke="#FFD6EC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+      <rect x="176" y="84" width="120" height="196" rx="60"/>
+      <path d="M136 226v18a100 100 0 0 0 200 0v-18"/>
+      <path d="M236 344v58M180 420h112"/>
+    </g>
+    <g stroke="#FF2E97" stroke-width="10" stroke-linecap="round" opacity="0.85">
+      <path d="M212 150h48M212 190h48"/>
+    </g>
+    <path filter="url(#glow)" fill="#22E4FF" d="M394 240c0 0-36 50-36 74a36 36 0 0 0 72 0c0-24-36-74-36-74z"/>
+    <path fill="none" opacity="0.85" d="M382 304a14 14 0 0 0 6 18" stroke="#D6FAFF" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,16 @@
+{
+  "name": "karaokry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sing it wrong. A party lyrics game for friends, powered by Spotify and LRCLIB.",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.js",
+    "test": "node --test",
+    "icons": "node tools/render-icons.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
