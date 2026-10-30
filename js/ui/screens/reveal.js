@@ -47,6 +47,16 @@ export default {
     r.save.addEventListener('click', () => this.save());
     r.share.addEventListener('click', () => this.share());
     r.tapToPlay.addEventListener('click', () => this.playCurrent());
+    // A tap on the video pauses it, and another tap plays it again.
+    r.replay.addEventListener('click', (event) => {
+      if (event.target.closest('button') || r.video.hidden) return;
+      if (r.video.paused) {
+        this.playCurrent();
+      } else {
+        r.video.pause();
+        r.tapToPlay.hidden = false;
+      }
+    });
     r.video.addEventListener('ended', () => {
       // Several segments (after Go back) play one after another, then start over.
       if (this.urls.length > 1) this.load((this.index + 1) % this.urls.length);

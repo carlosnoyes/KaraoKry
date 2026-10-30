@@ -67,7 +67,7 @@ A friend with Premium can do step B themselves (same redirect URI), then paste t
 3. It finds lyrics for the first few songs, which takes a second or two, and looks up the rest in the background during the game, always about 10 songs ahead. Songs with lyrics play first; songs without any wait at the back of the list.
 4. Each round, the singer puts on the headphones and taps **I'm ready**. While song *k* plays, the screen shows the lyrics of song *k − 1* (song 1 gets the lyrics of the last song), with the title of the song they're hearing at the top. If song *k − 1* has no lyrics, the round borrows them from a song already played, the one shown least often.
 5. The front camera films the singer and records their voice. The music is only in their headphones, so the recording is just their singing. A cyan ring around the selfie bubble swells with their voice, which shows the microphone hears them.
-6. Tap **Got It!** when someone guesses. The replay fills the screen straight away, with the right answer across the top, and loops until you tap **Next singer**. **Save video** puts it in the phone's Downloads; **Share** opens Android's share sheet (Google Photos, WhatsApp...). A skipped song's recording is thrown away.
+6. Tap **Got It!** when someone guesses. The replay fills the screen straight away, with the right answer across the top, and loops until you tap **Next singer**. Tap the video to pause it, and tap again to play. **Save video** puts it in the phone's Downloads; **Share** opens Android's share sheet (Google Photos, WhatsApp...). A skipped song's recording is thrown away.
 
 ### Filming notes
 

@@ -6,7 +6,7 @@
 // APP_VERSION must match VERSION in sw.js. Bump both when you deploy changes,
 // so installed apps pick up the new version.
 
-export const APP_VERSION = '1.2.1';
+export const APP_VERSION = '1.2.2';
 
 export const SPOTIFY_CLIENT_ID = 'aaf74259c73344f097eca1482c49beb1';
 
