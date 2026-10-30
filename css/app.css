@@ -1093,10 +1093,11 @@ select.input { font-family: var(--font); font-size: 16px; color: var(--text); }
   .overlay--rotate { display: flex; }
 }
 
+/* Toasts appear at the top, below the header, so they never cover the main buttons. */
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: calc(24px + var(--safe-bottom));
+  top: calc(64px + var(--safe-top));
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -1124,15 +1125,10 @@ select.input { font-family: var(--font); font-size: 16px; color: var(--text); }
   animation: toast-in 200ms ease-out;
 }
 .toast--action { pointer-events: auto; cursor: pointer; border-color: var(--cyan); min-height: 48px; }
-/* During a round, toasts appear at the top so they never cover the controls. */
-body:has(#screen-round:not([hidden])) .toasts {
-  top: calc(64px + var(--safe-top));
-  bottom: auto;
-}
 .toast__action { color: var(--cyan); }
 .toast.is-leaving { opacity: 0; transition: opacity 200ms ease; }
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: none; }
 }
 

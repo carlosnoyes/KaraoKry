@@ -420,7 +420,7 @@ The search box filters the list as the user types. Match the typed text anywhere
 
 ### 8.2 Reading the playlist
 
-1. Call `GET /playlists/{id}/items?limit=50&additional_types=track`. When the first page's `next` link has an `offset`, build the links for all later pages from it and read them 4 at a time, keeping their order. Otherwise follow `next` until it is null.
+1. Call `GET /playlists/{id}/items?limit=50&additional_types=track&market=from_token`. The market makes Spotify include `is_playable`, so songs that cannot play in the user's country are left out; every later page keeps or gets a market too. When the first page's `next` link has an `offset`, build the links for all later pages from it and read them 4 at a time, keeping their order. Otherwise follow `next` until it is null.
 2. For each entry, read the track as `entry.item ?? entry.track`, and the local-file flag as `entry.is_local`.
 3. If the call returns 403, or the response has no items field, show: "Spotify won't let KaraoKry read this playlist. Copy its songs into a playlist you own." Return to the picker.
 
@@ -1029,7 +1029,7 @@ These are the only outside calls KaraoKry makes. The Web API base URL is `https:
 | Spotify Accounts | `POST https://accounts.spotify.com/api/token` | Code exchange and token refresh |
 | Web API | `GET /me` | User id, display name, guest-list check |
 | Web API | `GET /me/playlists?limit=50` | Playlist picker, paged with `next` |
-| Web API | `GET /playlists/{id}/items?limit=50&additional_types=track` | Playlist songs (owned or collaborative only), paged with `next` |
+| Web API | `GET /playlists/{id}/items?limit=50&additional_types=track&market=from_token` | Playlist songs (owned or collaborative only), paged with `next` |
 | Web API | `PUT /me/player/play?device_id={id}` | Start a track with `{ uris, position_ms }`, or resume with no body |
 | Web API | `PUT /me/player/pause` | Pause (Connect engine) |
 | Web API | `PUT /me/player/seek?position_ms={ms}` | Seek (Connect engine) |

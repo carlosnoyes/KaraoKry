@@ -1,7 +1,7 @@
 // Reading the user's playlists and a playlist's items from Spotify.
 // Parses both the 2026 field names (items / item) and the old ones (tracks / track).
 
-import { api, SpotifyError } from './spotify-api.js';
+import { api, SpotifyError, API_BASE } from './spotify-api.js';
 import { foldText } from './lyrics.js';
 
 const MAX_PAGES = 200;
@@ -115,10 +115,21 @@ export function laterPageUrls(next, total) {
   return urls;
 }
 
+/**
+ * Adds the user's country to a playlist page request. Only then does Spotify say which
+ * songs can't play there (`is_playable: false`), so they are left out before the game
+ * instead of being skipped during it. Paging links keep a market they already have.
+ */
+export function withMarket(path) {
+  const url = new URL(path.startsWith('https://') ? path : `${API_BASE}${path}`);
+  if (!url.searchParams.has('market')) url.searchParams.set('market', 'from_token');
+  return url.href;
+}
+
 async function readPage(path, signal) {
   let data;
   try {
-    data = await api(path, { signal });
+    data = await api(withMarket(path), { signal });
   } catch (err) {
     if (err instanceof SpotifyError && err.status === 403) throw new PlaylistUnreadableError();
     throw err;
