@@ -37,5 +37,12 @@ Run from the repo root. `<py>` is `C:/Users/Carlos/Tools/usdb-headless/.venv/Scr
    download notes, audio and covers (no video). It uses the USDB login saved in USDB Syncer
    and skips songs already on disk, so it can be stopped and started again.
 4. `node v2/tools/refresh-catalog.mjs`: record each song's folder and files in `songs.json`.
+5. `node v2/tools/publish.mjs --upload`: convert every downloaded song into KaraoKry's own
+   format and upload it to the private Cloudflare R2 bucket `karaokry-songs`. Without
+   `--upload` it only builds the files in `.work/publish`. It needs FFmpeg and a one-time
+   `npx wrangler login`, and it only uploads files that changed since the last run.
+   [SONG-FORMAT.md](SONG-FORMAT.md) describes every file.
+
+`node --test v2/tests/ultrastar.test.mjs` tests the UltraStar conversion (`npm test` runs it too).
 
 Working files (Deezer cache, download list, logs) are in `C:\Users\Carlos\KaraoKry-songs\.work`.
