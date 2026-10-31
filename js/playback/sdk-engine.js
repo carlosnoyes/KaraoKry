@@ -98,7 +98,9 @@ export class SdkEngine extends Emitter {
         this.emit('error', { kind: 'reconnected' });
       }
     });
-    player.addListener('not_ready', () => {
+    player.addListener('not_ready', ({ device_id: deviceId }) => {
+      // Ignore the old player going offline after reconnect() has asked for a new one.
+      if (deviceId !== this.deviceId) return;
       this.deviceId = null;
       this.reconnecting = true;
       this.emit('error', { kind: 'not_ready' });
@@ -157,14 +159,16 @@ export class SdkEngine extends Emitter {
       await loadSdk();
       this.createPlayer();
       if (this.deviceId) return;
+      let timer;
       const ready = new Promise((resolve, reject) => {
         const deferred = { resolve, reject };
         this.pendingReady = deferred;
-        setTimeout(() => {
+        timer = setTimeout(() => {
           if (this.pendingReady === deferred) this.failReady(new EngineUnavailableError('SDK never became ready'));
         }, READY_TIMEOUT_MS);
       });
-      ready.catch(() => {}); // handled below; avoids an unhandled rejection if connect() fails first
+      // Stops the timer once settled. Also avoids an unhandled rejection if connect() fails first.
+      ready.then(() => clearTimeout(timer), () => clearTimeout(timer));
       const connected = await this.player.connect();
       if (!connected) {
         this.pendingReady = null;
@@ -176,6 +180,19 @@ export class SdkEngine extends Emitter {
       this.readyPromise = null;
     });
     return this.readyPromise;
+  }
+
+  /**
+   * Connects the player again for a new device. Spotify forgets a player that has been
+   * quiet for a while, or whose page the phone put to sleep (an iPhone switching apps),
+   * and playing on it then fails with "Device not found".
+   */
+  async reconnect() {
+    setDebug('deviceId', 'reconnecting');
+    this.readyPromise = null;
+    this.deviceId = null;
+    this.player?.disconnect();
+    await this.init();
   }
 
   /** Must run synchronously inside a tap: lets the browser start audio later. */
@@ -195,6 +212,7 @@ export class SdkEngine extends Emitter {
 
   async playTrack(uri, positionMs = 0) {
     await this.init();
+    if (!this.deviceId) await this.reconnect();
     this.detector.start(uri, this.state?.uri ?? null);
     const body = { uris: [uri], position_ms: Math.max(0, Math.round(positionMs)) };
 
@@ -205,7 +223,10 @@ export class SdkEngine extends Emitter {
       } catch (err) {
         if (isPremiumError(err)) throw new PremiumRequiredError();
         if (err?.status === 404 && attempt < DEVICE_RETRIES) {
-          await sleep(1000);
+          // Just after connecting, Spotify may not know the player yet, so wait. If it still
+          // doesn't, it has forgotten the player: connect again for a new device.
+          if (attempt === DEVICE_RETRIES - 1 && isDeviceError(err)) await this.reconnect();
+          else await sleep(1000);
           continue;
         }
         if (err?.status === 404) {

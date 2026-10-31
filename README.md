@@ -79,7 +79,7 @@ A friend with Premium can do step B themselves (same redirect URI), then paste t
 - Some phones claim to record MP4 with sound, then leave the sound out. KaraoKry checks the first second of every recording, and if the sound is missing it switches to WebM and remembers that for this phone. **Settings → Advanced → Debug info** shows the format, whether the recording contains sound, the microphone level and whether the replay had sound.
 - Recordings stay on the phone and are deleted when the next round starts, unless you saved them. If the app was closed mid-round, that round has no replay and the answer card is shown instead.
 
-Playback happens inside KaraoKry with Spotify's Web Playback SDK. If a phone can't do that (some Android DRM settings block it), KaraoKry switches to remote-controlling the Spotify app instead. You can choose in **Settings → Playback**.
+Playback happens inside KaraoKry with Spotify's Web Playback SDK. If a phone can't do that (some Android DRM settings block it), KaraoKry switches to remote-controlling the Spotify app instead. Once playing inside KaraoKry has worked on a phone, it never switches by itself there. You can choose in **Settings → Playback**.
 
 ---
 

@@ -14,7 +14,13 @@ import { SdkEngine, loadSdk } from './sdk-engine.js';
 import { ConnectEngine } from './connect-engine.js';
 
 const MODE_KEY = 'kk.playbackMode';
-const ENGINE_KEY = 'kk.engine';
+// Renamed in 1.2.3: older versions also switched when the in-browser player had only
+// lost its connection, so phones get one more try at playing inside KaraoKry.
+const ENGINE_KEY = 'kk.engine2';
+const OLD_ENGINE_KEY = 'kk.engine';
+// Set once the in-browser player has played on this phone. From then on, Automatic
+// never switches to the Spotify app by itself.
+const SDK_PLAYED_KEY = 'kk.sdkPlayed';
 export const MODES = ['auto', 'sdk', 'connect'];
 const FORWARDED_EVENTS = ['state', 'ended', 'interrupted'];
 
@@ -27,6 +33,7 @@ class PlaybackManager extends Emitter {
     this.generation = 0;
     this.unsubscribers = [];
     this.demoFactory = null;
+    lsRemove(OLD_ENGINE_KEY);
   }
 
   getMode() {
@@ -84,6 +91,14 @@ class PlaybackManager extends Emitter {
     for (const event of FORWARDED_EVENTS) {
       this.unsubscribers.push(engine.on(event, (data) => this.emit(event, data)));
     }
+    if (engine.name === 'sdk') {
+      const unsubscribe = engine.on('state', () => {
+        if (!engine.everPlayed) return;
+        lsSet(SDK_PLAYED_KEY, true);
+        unsubscribe();
+      });
+      this.unsubscribers.push(unsubscribe);
+    }
     this.unsubscribers.push(engine.on('error', (err) => this.onEngineError(engine, err)));
   }
 
@@ -116,8 +131,18 @@ class PlaybackManager extends Emitter {
     this.ensureEngine().unlock();
   }
 
+  /** True once the in-browser player has played on this phone, in this game or before. */
+  sdkHasPlayed(engine) {
+    return Boolean(engine.everPlayed) || lsGet(SDK_PLAYED_KEY, false) === true;
+  }
+
+  /**
+   * Automatic mode switches to the Spotify app only on a phone where playing inside
+   * KaraoKry has never worked. Where it has, a failure is shown with "Try again" instead.
+   */
   canFallBack(engine, err) {
-    return this.getMode() === 'auto' && engine.name === 'sdk' && err instanceof EngineUnavailableError;
+    return this.getMode() === 'auto' && engine.name === 'sdk' && err instanceof EngineUnavailableError
+      && !this.sdkHasPlayed(engine);
   }
 
   fallBack() {
@@ -133,7 +158,7 @@ class PlaybackManager extends Emitter {
     if (err.kind === 'playback' && engine.name === 'sdk') {
       // A phone that never managed to play (DRM or Widevine trouble) falls back to the
       // Spotify app. Once songs have played fine, an error means this one song is the problem.
-      if (engine.everPlayed) {
+      if (this.sdkHasPlayed(engine)) {
         this.emit('track-error');
       } else if (this.getMode() === 'auto') {
         this.fallBack();

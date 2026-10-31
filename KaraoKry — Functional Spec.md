@@ -533,7 +533,7 @@ Settings has "Playback" with three options. The default is Automatic.
 
 | Option | Behaviour |
 | --- | --- |
-| Automatic (default) | Try the SDK engine. If it fails to start or reports a DRM or playback error, switch to the Connect engine and remember that choice for this phone in `localStorage` as `kk.engine = 'connect'`. |
+| Automatic (default) | Try the SDK engine. If it fails to start or reports a DRM or playback error, switch to the Connect engine and remember that choice for this phone in `localStorage` as `kk.engine2 = 'connect'`. Once the SDK engine has played on a phone (`kk.sdkPlayed`), never switch by itself there: show the error with "Try again" instead. |
 | Play inside KaraoKry | SDK engine only. Errors are shown and nothing falls back. |
 | Use the Spotify app | Connect engine only. |
 
@@ -552,7 +552,7 @@ Each round:
 
 1. In the "I'm ready" tap handler, call `player.activateElement()` synchronously. This satisfies the browser's rule that audio must start from a tap.
 2. When the countdown ends, call `PUT https://api.spotify.com/v1/me/player/play?device_id=<id>` with body `{ "uris": ["<track uri>"], "position_ms": 0 }`.
-3. If that returns 404 (device not registered yet), wait 1 second and retry, up to 3 times.
+3. If that returns 404 (device not registered yet), wait 1 second and retry, up to 3 times. Spotify forgets a player that has been quiet for a while or whose page the phone put to sleep (an iPhone switching apps), so the last retry first reconnects the player (`disconnect()`, then `connect()`) for a new `device_id`. A player that went `not_ready` is reconnected the same way before playing.
 4. On the first round of a game, after playback starts, call `PUT /me/player/repeat?state=off&device_id=<id>` and `PUT /me/player/shuffle?state=false&device_id=<id>`.
 5. Pause, resume and seek use the SDK's own `player.pause()`, `player.resume()` and `player.seek(ms)`. They need no Web API calls.
 6. For position, call `player.getCurrentState()` every 500 ms while the round screen is visible. Between reads, move the bar smoothly with `requestAnimationFrame` when not paused.
@@ -746,7 +746,8 @@ A game in progress survives the app closing, the phone locking, or a reload. Sma
 | localStorage | `kk.auth` | Access token, refresh token, `expires_at`, `authorized_at`, user id, display name |
 | localStorage | `kk.pkce` | Verifier, state and Client ID during a login only |
 | localStorage | `kk.clientId` | Custom Client ID, if set |
-| localStorage | `kk.engine` | Remembered fallback choice, `'connect'`, if Automatic switched |
+| localStorage | `kk.engine2` | Remembered fallback choice, `'connect'`, if Automatic switched (1.2.3 renamed it from `kk.engine`, giving every phone another try at the SDK engine) |
+| localStorage | `kk.sdkPlayed` | `true` once the SDK engine has played on this phone |
 | localStorage | `kk.playbackMode` | `'auto'`, `'sdk'` or `'connect'` |
 | localStorage | `kk.lyricsSize` | Lyrics font size in px |
 | localStorage | `kk.vibration` | `true` or `false` |
