@@ -4,12 +4,16 @@
 //   node v2/tools/publish.mjs            build the package in <work>/publish (nothing uploaded)
 //   node v2/tools/publish.mjs --upload   build it, then upload whatever changed since last time
 //
-// Uploads use Wrangler (`npx wrangler login` once). <work>/publish/uploaded.json remembers
-// the checksum of every uploaded file, so re-running only sends new or changed files.
+// Uploads go through the song server (v2/worker), signed with the ADMIN_KEY kept in
+// C:\Users\Carlos\KaraoKry-songs\secrets\worker-secrets.json, and R2 checks every file's
+// checksum. <work>/publish/uploaded.json remembers the checksum of every uploaded file, so
+// re-running only sends new or changed files.
 
 import { createHash } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createReadStream, existsSync } from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,15 +26,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CATALOG = path.join(here, '..', 'catalog');
 const SONGS = process.env.KK_SONGS ?? 'C:\\Users\\Carlos\\KaraoKry-songs\\songs';
 const OUT = path.join(WORK, 'publish');
-const BUCKET = 'karaokry-songs';
+const SONG_SERVER = process.env.KK_SONG_SERVER ?? 'https://karaokry-songs.karaokry.workers.dev';
+const SECRETS = process.env.KK_SECRETS ?? 'C:\\Users\\Carlos\\KaraoKry-songs\\secrets\\worker-secrets.json';
 const FFMPEG_DIR = process.env.FFMPEG_DIR ?? 'C:\\Users\\Carlos\\Tools\\ffmpeg\\bin';
 const FORMAT_VERSION = 1;
 const SMALL_COVER_PX = 256;
-const UPLOAD_PARALLEL = 3;
-const SMALL_FILE_BATCH = 10;
-const UPLOAD_ATTEMPTS = 6;
-const API_WINDOW_MS = 5 * 60 * 1000;
-const API_BUDGET = 1000;
+// More than 4 uploads at once made this PC's connection drop or garble some of them.
+const UPLOAD_PARALLEL = 4;
+const UPLOAD_ATTEMPTS = 5;
 const CONTENT_TYPES = {
   '.m4a': 'audio/mp4',
   '.jpg': 'image/jpeg',
@@ -231,41 +234,41 @@ function catalogEntry(meta) {
   };
 }
 
-function quote(arg) {
-  return `"${String(arg).replace(/"/g, '\\"')}"`;
-}
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Keeps every Wrangler run together under Cloudflare's API limit (1,200 requests per 5 minutes). */
-const sent = [];
-async function throttle(requests) {
-  for (;;) {
-    const now = Date.now();
-    while (sent.length && now - sent[0].at > API_WINDOW_MS) sent.shift();
-    const used = sent.reduce((n, s) => n + s.requests, 0);
-    if (used + requests <= API_BUDGET) break;
-    await sleep(sent[0].at + API_WINDOW_MS - now + 100);
-  }
-  sent.push({ at: Date.now(), requests });
-}
-
-/** Uploads one batch with `wrangler r2 bulk put`; resolves to Wrangler's error text, or null. */
-async function bulkPut(entries, type, batchFile) {
-  await writeFile(batchFile, JSON.stringify(entries.map(({ key, file }) => ({ key, file }))));
-  const args = ['-y', 'wrangler@4', 'r2', 'bulk', 'put', BUCKET, '--remote', '--filename', batchFile,
-    '--content-type', type, '--concurrency', String(Math.min(2, entries.length))];
-  return new Promise((resolve) => {
-    const child = spawn('npx', args.map(quote), { shell: true, stdio: ['ignore', 'ignore', 'pipe'] });
-    let errors = '';
-    child.stderr.on('data', (d) => {
-      errors += d;
+/**
+ * Sends one file to the song server, which stores it in R2 only if its checksum matches.
+ * Each upload gets a new connection: reused connections were often dropped mid-upload.
+ */
+async function putFile(entry, adminKey) {
+  const body = await readFile(entry.file);
+  const url = new URL(`${SONG_SERVER}/admin/objects/${entry.key}`);
+  const client = url.protocol === 'http:' ? http : https;
+  await new Promise((resolve, reject) => {
+    const request = client.request(url, {
+      method: 'PUT',
+      agent: false,
+      headers: {
+        authorization: `Bearer ${adminKey}`,
+        'content-type': CONTENT_TYPES[path.extname(entry.key)],
+        'content-length': body.length,
+        'x-content-sha256': entry.sha256,
+      },
+    }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (d) => {
+        text += d;
+      });
+      response.on('end', () => (response.statusCode < 300 ? resolve() : reject(new Error(`${response.statusCode} ${text}`))));
     });
-    child.on('close', (code) => resolve(code === 0 ? null : errors));
+    request.on('error', reject);
+    request.end(body);
   });
 }
 
 async function upload(entries) {
+  const { ADMIN_KEY: adminKey } = JSON.parse(await readFile(SECRETS, 'utf8'));
   const uploadedFile = path.join(OUT, 'uploaded.json');
   let uploaded = {};
   try {
@@ -274,48 +277,31 @@ async function upload(entries) {
     // first upload
   }
   const pending = entries.filter((e) => uploaded[e.key] !== e.sha256);
+  // The catalog goes last, so it only ever lists songs that are already up.
+  const files = pending.filter((e) => !e.key.startsWith('catalog/'));
+  const catalog = pending.filter((e) => e.key.startsWith('catalog/'));
   console.log(`${entries.length} files, ${pending.length} new or changed`);
-  // Cloudflare's API sometimes closes a connection mid-upload, and Wrangler then fails on the
-  // next file it sends over that connection. Short runs keep connections fresh, and a failed
-  // batch is simply sent again. The catalog goes last, so it only lists songs already up.
-  const batches = [];
-  const byType = new Map();
-  for (const e of pending.filter((p) => !p.key.startsWith('catalog/'))) {
-    const type = CONTENT_TYPES[path.extname(e.key)];
-    if (!byType.has(type)) byType.set(type, []);
-    byType.get(type).push(e);
-  }
-  for (const [type, list] of byType) {
-    const size = type === 'audio/mp4' ? 2 : SMALL_FILE_BATCH;
-    for (let i = 0; i < list.length; i += size) batches.push({ type, entries: list.slice(i, i + size) });
-  }
-  const catalog = pending.filter((p) => p.key.startsWith('catalog/'));
-  await mkdir(path.join(OUT, 'batches'), { recursive: true });
 
   let done = 0;
-  let logged = 0;
   let retries = 0;
   let saving = Promise.resolve();
-  const send = async (batch, index) => {
+  const send = async (entry) => {
     for (let attempt = 1; ; attempt++) {
-      // Each run also makes a couple of calls of its own.
-      await throttle(batch.entries.length + 2);
-      const error = await bulkPut(batch.entries, batch.type, path.join(OUT, 'batches', `${index}.json`));
-      if (!error) break;
-      if (attempt === UPLOAD_ATTEMPTS) throw new Error(`Upload failed after ${attempt} tries: ${error.split('\n').find((l) => /ERROR/.test(l)) ?? error.slice(-300)}`);
-      retries++;
-      await sleep(2000 * attempt);
+      try {
+        await putFile(entry, adminKey);
+        break;
+      } catch (err) {
+        if (attempt === UPLOAD_ATTEMPTS) throw new Error(`Upload of ${entry.key} failed after ${attempt} tries: ${err.message}`);
+        retries++;
+        await sleep(1000 * attempt);
+      }
     }
-    for (const e of batch.entries) uploaded[e.key] = e.sha256;
-    done += batch.entries.length;
+    uploaded[entry.key] = entry.sha256;
     saving = saving.then(() => writeFile(uploadedFile, JSON.stringify(uploaded, null, 1)));
-    if (done - logged >= 100 || done === pending.length - catalog.length) {
-      logged = done;
-      console.log(`uploaded ${done}/${pending.length - catalog.length} files (${retries} retries)`);
-    }
+    if (++done % 200 === 0) console.log(`uploaded ${done}/${pending.length} files (${retries} retries)`);
   };
-  await pool(batches, UPLOAD_PARALLEL, send);
-  if (catalog.length) await send({ type: 'application/json', entries: catalog }, 'catalog');
+  await pool(files, UPLOAD_PARALLEL, send);
+  await pool(catalog, UPLOAD_PARALLEL, send);
   await saving;
   console.log(`upload finished: ${pending.length} files, ${retries} retries`);
 }

@@ -38,11 +38,23 @@ Run from the repo root. `<py>` is `C:/Users/Carlos/Tools/usdb-headless/.venv/Scr
    and skips songs already on disk, so it can be stopped and started again.
 4. `node v2/tools/refresh-catalog.mjs`: record each song's folder and files in `songs.json`.
 5. `node v2/tools/publish.mjs --upload`: convert every downloaded song into KaraoKry's own
-   format and upload it to the private Cloudflare R2 bucket `karaokry-songs`. Without
-   `--upload` it only builds the files in `.work/publish`. It needs FFmpeg and a one-time
-   `npx wrangler login`, and it only uploads files that changed since the last run.
-   [SONG-FORMAT.md](SONG-FORMAT.md) describes every file.
+   format and upload it to the private Cloudflare R2 bucket `karaokry-songs`, through the
+   song server. Without `--upload` it only builds the files in `.work/publish`. It needs
+   FFmpeg, and it only uploads files that changed since the last run.
+   [SONG-FORMAT.md](SONG-FORMAT.md) describes every file and how the app reads them.
 
-`node --test v2/tests/ultrastar.test.mjs` tests the UltraStar conversion (`npm test` runs it too).
+## The song server
+
+`v2/worker` is a Cloudflare Worker, `https://karaokry-songs.karaokry.workers.dev`, in front of
+the bucket. Players sign in with an access code and get a 12-hour token; every file URL
+carries the token. `publish.mjs` uploads through it with an admin key.
+
+- Deploy: `cd v2/worker` then `npx wrangler@4 deploy` (after `npx wrangler login` once).
+- Secrets: `ACCESS_CODE`, `SIGNING_KEY` and `ADMIN_KEY` live in
+  `C:\Users\Carlos\KaraoKry-songs\secrets\worker-secrets.json` (never in the repo). After
+  changing one there, run `npx wrangler@4 secret bulk <that file>` from `v2/worker`. A new
+  `SIGNING_KEY` signs everyone out; a new `ACCESS_CODE` means sharing the new code.
+
+`npm test` also runs `v2/tests`: the UltraStar conversion and the server's tokens.
 
 Working files (Deezer cache, download list, logs) are in `C:\Users\Carlos\KaraoKry-songs\.work`.

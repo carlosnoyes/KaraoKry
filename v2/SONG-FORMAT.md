@@ -9,8 +9,26 @@ All times are **milliseconds from the start of the audio file**.
 
 ## Where the files live
 
-A private Cloudflare R2 bucket, `karaokry-songs`. Nothing in it is public; the app will reach
-it through a Worker that checks an access code.
+A private Cloudflare R2 bucket, `karaokry-songs`. Nothing in it is public; the app reads it
+through the song server, a Worker at `https://karaokry-songs.karaokry.workers.dev`
+(code in `v2/worker`).
+
+### Reading the songs
+
+1. `POST /api/session` with `{"code": "<access code>"}` returns
+   `{"token": "…", "expiresAt": "…"}`. A token lasts 12 hours. A wrong code gets `403`, and
+   too many sign-ins from one address in a minute get `429`.
+2. Every file is at `/<bucket key>?t=<token>`, for example
+   `/catalog/songs.json?t=…` or `/songs/usdb-56/audio.m4a?t=…`. Without a valid token the
+   answer is `401`: get a new token and try again.
+
+Audio supports `Range` requests, so an `<audio>` element given the URL starts playing at once
+and can seek; every audio file keeps its index at the start. The catalog is sent with
+`no-cache`; song files may be cached for a week (add `&v=<version>` from the catalog to get a
+fresh copy after a song changes). Pages on `https://carlosnoyes.github.io` and on `localhost`
+may read the files from scripts (CORS).
+
+The access code is in `C:\Users\Carlos\KaraoKry-songs\secrets\worker-secrets.json`.
 
 ```
 catalog/songs.json             every song, short entries for listing and picking
