@@ -2,6 +2,8 @@
 
 **Sing it wrong.** A party game for friends: the singer hears one song in their headphones but sees the lyrics of a different song, and sings those wrong words to the tune. Everyone else guesses the real song and artist.
 
+> **This is V1, the Spotify version. It is frozen at tag `v1.2.3`** and stays live until V2 replaces it. V2 plays its own karaoke tracks with timed lyrics instead of Spotify, and is built in a separate private repository, `carlosnoyes/KaraoKry2`.
+
 KaraoKry is an installable web app (PWA) for Chrome on Android. Music comes from Spotify and lyrics come from [LRCLIB](https://lrclib.net). There is no server: the files are hosted on GitHub Pages.
 
 - Live site: <https://carlosnoyes.github.io/KaraoKry/>
